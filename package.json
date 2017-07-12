@@ -1,0 +1,20 @@
+{
+    "name": "tsdocparser",
+    "version": "0.0.1",
+    "repository": "https://github.com/digojs/tsdocparser",
+    "description": "Document comment parser for TypeScript & JavaScript",
+    "keywords": [
+        "tsdoc",
+        "jsdoc"
+    ],
+    "license": "MIT",
+    "dependencies": {
+        "typescript": "next"
+    },
+    "typings": "index.d.ts",
+    "scripts": {
+        "build": "tsc index.ts -d --target es6 --module commonjs",
+        "test": "node -p \"JSON.stringify(require('./').default('index.ts'), null, 2)\""
+    },
+    "author": "xuld <xuld@vip.qq.com>"
+}
