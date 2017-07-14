@@ -462,7 +462,7 @@ function parseProgram(program, sourceFiles) {
                         name: getSymbolName(symbol),
                         sourceFile: symbol.getDeclarations() && symbol.getDeclarations()[0] && symbol.getDeclarations()[0].getSourceFile().fileName
                     };
-                    if (symbol.parent) {
+                    if (symbol.parent && !symbol.parent.flags) {
                         result.parent = symbolToType(symbol.parent);
                     }
                     return result;

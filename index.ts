@@ -703,7 +703,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                         name: getSymbolName(symbol),
                         sourceFile: symbol.getDeclarations() && symbol.getDeclarations()[0] && symbol.getDeclarations()[0].getSourceFile().fileName
                     };
-                    if ((symbol as any).parent) {
+                    if ((symbol as any).parent && !((symbol as any).parent.flags as ts.SymbolFlags.Module)) {
                         result.parent = symbolToType((symbol as any).parent);
                     }
                     return result;
