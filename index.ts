@@ -543,9 +543,11 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 result.parameters.push(p);
             }
             result.returnType = parseType(signature.getReturnType());
-            const returnDoc = (ts as any).getJSDocReturnTag(symbol.valueDeclaration);
-            if (returnDoc) {
-                result.returnSummary = returnDoc.comment;
+            if (symbol.valueDeclaration) {
+	            const returnDoc = (ts as any).getJSDocReturnTag(symbol.valueDeclaration);
+	            if (returnDoc) {
+	                result.returnSummary = returnDoc.comment;
+	            }
             }
         } else if (symbol.flags & ts.SymbolFlags.Class) {
             result = new DocClass();
