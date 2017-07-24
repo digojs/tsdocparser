@@ -541,9 +541,9 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
 
     function addMember(container: DocMemberContainer, member: DocMember) {
         if (member) {
-            const key = member.memberType === "field" || member.memberType === "accessor" || member.memberType === "enumMember" ? "fields" : member.memberType === "method" || member.memberType === "constructor" ? "method" : "type";
+            const key = member.memberType === "field" || member.memberType === "accessor" || member.memberType === "enumMember" ? "fields" : member.memberType === "method" || member.memberType === "constructor" ? "methods" : "types";
             container[key] = container[key] || [];
-            container[key].push(member);
+            (container[key] as any[]).push(member);
         }
     }
 
@@ -911,4 +911,4 @@ function getSymbolName(symbol: ts.Symbol | ts.Signature, declaration: ts.Declara
     return name ? name.getText() : (symbol as ts.Symbol).getName ? (symbol as ts.Symbol).getName() : (symbol as ts.Symbol).name;
 }
 
-console.log(JSON.stringify(parseDoc(__dirname + "/test/fixture.ts").sourceFiles[1].members, undefined, 2));
+console.log(JSON.stringify(parseDoc(__dirname + "/test/fixture.ts").sourceFiles[1], undefined, 2));
