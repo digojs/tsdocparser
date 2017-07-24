@@ -21,25 +21,9 @@ export declare abstract class DocMember extends DocEntry {
      */
     readonly abstract memberType: string;
     /**
-     * 成员是否私有。
+     * 成员修饰符。
      */
-    private: boolean;
-    /**
-     * 成员是否保护。
-     */
-    protected: boolean;
-    /**
-     * 成员是否抽象。
-     */
-    abstract: boolean;
-    /**
-     * 成员是否异步。
-     */
-    async: boolean;
-    /**
-     * 成员是否常量。
-     */
-    const: boolean;
+    modifiers: DocMemberModifiers;
     /**
      * 所属源文件。
      */
@@ -73,6 +57,62 @@ export declare abstract class DocMember extends DocEntry {
     toJSON(): any;
 }
 /**
+ * 表示成员修饰符。
+ */
+export declare enum DocMemberModifiers {
+    /**
+     * 无修饰符。
+     */
+    none = 0,
+    /**
+     * 公开的。
+     */
+    public = 1,
+    /**
+     * 内部的。
+     */
+    internal = 2,
+    /**
+     * 保护的。
+     */
+    protected = 4,
+    /**
+     * 私有的。
+     */
+    private = 8,
+    /**
+     * 异步的
+     */
+    async = 16,
+    /**
+     * 常量的
+     */
+    const = 32,
+    /**
+     * 只读的。
+     */
+    readonly = 64,
+    /**
+     * 抽象的。
+     */
+    abstract = 128,
+}
+/**
+ * 表示一个容器。
+ */
+export declare abstract class DocMemberContainer extends DocMember {
+    /**
+     * 所有成员。
+     */
+    members: DocMember[];
+    /**
+     * 获取指定名称的成员。
+     * @param name 要获取的名称。
+     * @return 返回成员对象。
+     */
+    getMember(name: string): DocMember;
+}
+/**
  * 表示一个字段。
  */
 export declare class DocField extends DocMember {
@@ -84,6 +124,19 @@ export declare class DocField extends DocMember {
      * 字段类型。
      */
     type: DocType;
+}
+/**
+ * 表示一个方法组。
+ */
+export declare class DocMethodGroup extends DocMemberContainer {
+    /**
+     * 成员类型。
+     */
+    readonly memberType: string;
+    /**
+     * 所有成员。
+     */
+    members: DocMethod[];
 }
 /**
  * 表示一个方法。
@@ -147,21 +200,6 @@ export declare class DocTypeParameter extends DocEntry {
      * 约束类型。
      */
     extends?: DocType;
-}
-/**
- * 表示一个容器。
- */
-export declare abstract class DocMemberContainer extends DocMember {
-    /**
-     * 所有成员。
-     */
-    members: DocMember[];
-    /**
-     * 获取指定名称的成员。
-     * @param name 要获取的名称。
-     * @return 返回成员对象。
-     */
-    getMember(name: string): DocMember;
 }
 /**
  * 表示一个类。
@@ -333,6 +371,10 @@ export declare class DocProject {
      * @return 返回文件对象。
      */
     getSourceFile(sourceFile: string): DocSourceFile;
+    /**
+     * 整理所有成员。
+     */
+    sort(): void;
 }
 /**
  * 解析指定程序的文档。

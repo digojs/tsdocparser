@@ -1,9 +1,9 @@
 import * as ts from "typescript";
 
 /**
- * 表示一个文档项。
+ * 表示一个文档节点。
  */
-export abstract class DocEntry {
+export interface DocNode {
 
     /**
      * 名字。
@@ -20,37 +20,22 @@ export abstract class DocEntry {
 /**
  * 表示一个成员。
  */
-export abstract class DocMember extends DocEntry {
+export interface DocMember extends DocNode {
 
     /**
      * 成员类型。
      */
-    abstract get memberType(): string;
+    memberType: DocField["memberType"] | DocMethod["memberType"] | DocClass["memberType"] | DocEnum["memberType"] | DocEnumMember["memberType"] | DocTypeAlias["memberType"] | DocNamespace["memberType"];
 
     /**
-     * 成员是否私有。
+     * 成员的导出名。
      */
-    private: boolean;
+    exportName?: string;
 
     /**
-     * 成员是否保护。
+     * 如果成员是继承的，则返回所属类型。
      */
-    protected: boolean;
-
-    /**
-     * 成员是否抽象。
-     */
-    abstract: boolean;
-
-    /**
-     * 成员是否异步。
-     */
-    async: boolean;
-
-    /**
-     * 成员是否常量。
-     */
-    const: boolean;
+    parent?: DocType;
 
     /**
      * 所属源文件。
@@ -66,6 +51,21 @@ export abstract class DocMember extends DocEntry {
      * 源文件列号(从 0 开始)。
      */
     sourceColumn?: number;
+
+    /**
+     * 成员是内部的。
+     */
+    internal?: boolean;
+
+    /**
+     * 成员是保护的。
+     */
+    protected?: boolean;
+
+    /**
+     * 成员是私有的。
+     */
+    private?: boolean;
 
     /**
      * 完整描述。
@@ -87,43 +87,64 @@ export abstract class DocMember extends DocEntry {
      */
     tags?: { [tagName: string]: string };
 
-    toJSON() {
-        return { memberType: this.memberType, ...(this as any) };
-    }
-
 }
 
 /**
  * 表示一个字段。
  */
-export class DocField extends DocMember {
+export interface DocField extends DocMember {
 
     /**
      * 成员类型。
      */
-    get memberType() { return "field"; }
+    memberType: "field" | "accessor";
 
     /**
      * 字段类型。
      */
-    type: DocType;
+    type?: DocType;
+
+    /**
+     * 字段是只读的。
+     */
+    readonly?: boolean;
+
+    /**
+     * 字段是常量的
+     */
+    const?: boolean;
+
+    /**
+     * 默认值表达式。
+     */
+    default?: string;
 
 }
 
 /**
  * 表示一个方法。
  */
-export class DocMethod extends DocMember {
+export interface DocMethod extends DocMember {
 
     /**
      * 成员类型。
      */
-    get memberType() { return "method"; }
+    memberType: "method" | "constructor";
 
     /**
-     * 函数执行时 *this* 的类型。
+     * 方法是生成器。
      */
-    thisType?: DocType;
+    generator?: boolean;
+
+    /**
+     * 方法是异步的
+     */
+    async?: boolean;
+
+    /**
+     * 方法是抽象的。
+     */
+    abstract?: boolean;
 
     /**
      * 所有泛型的形参。
@@ -131,9 +152,14 @@ export class DocMethod extends DocMember {
     typeParameters?: DocTypeParameter[];
 
     /**
+     * 函数执行时 *this* 的类型。
+     */
+    thisType?: DocType;
+
+    /**
      * 所有形参。
      */
-    parameters: DocParameter[] = [];
+    parameters: DocParameter[];
 
     /**
      * 返回值类型。
@@ -145,39 +171,17 @@ export class DocMethod extends DocMember {
      */
     returnSummary?: string;
 
-}
-
-/**
- * 表示一个形参。
- */
-export class DocParameter extends DocEntry {
-
     /**
-     * 参数类型。
+     * 方法的多个重载。
      */
-    type: DocType;
-
-    /**
-     * 是否是可选参数。
-     */
-    optional: boolean;
-
-    /**
-     * 是否是展开参数。
-     */
-    rest: boolean;
-
-    /**
-     * 默认值。
-     */
-    default?: string;
+    overloads?: DocMethod[];
 
 }
 
 /**
- * 表示一个泛型的形参。
+ * 表示一个泛型形参。
  */
-export class DocTypeParameter extends DocEntry {
+export interface DocTypeParameter extends DocNode {
 
     /**
      * 默认类型。
@@ -192,40 +196,82 @@ export class DocTypeParameter extends DocEntry {
 }
 
 /**
- * 表示一个容器。
+ * 表示一个形参。
  */
-export abstract class DocMemberContainer extends DocMember {
+export interface DocParameter extends DocNode {
 
     /**
-     * 所有成员。
+     * 参数类型。
      */
-    members: DocMember[];
+    type: DocType;
 
     /**
-     * 获取指定名称的成员。
-     * @param name 要获取的名称。
-     * @return 返回成员对象。
+     * 是否是可选参数。
      */
-    getMember(name: string) {
-        return this.members.find(member => member.name == name);
-    }
+    optional?: boolean;
+
+    /**
+     * 是否是展开参数。
+     */
+    rest?: boolean;
+
+    /**
+     * 默认值。
+     */
+    default?: string;
 
 }
 
 /**
- * 表示一个类。
+ * 表示一个成员容器。
  */
-export class DocClass extends DocMemberContainer {
+export interface DocMemberContainer {
+
+    /**
+     * 所有字段和访问器。
+     */
+    fields?: DocField[];
+
+    /**
+     * 所有方法。
+     */
+    methods?: DocMethod[];
+
+    /**
+     * 所有类型。
+     */
+    types?: DocMember[];
+
+}
+
+/**
+ * 表示一个命名空间。
+ */
+export interface DocNamespace extends DocMember, DocMemberContainer {
 
     /**
      * 成员类型。
      */
-    get memberType() { return "class"; }
+    memberType: "namespace";
+
+}
+
+/**
+ * 表示一个类类型。
+ */
+export interface DocClassLike extends DocMember, DocMemberContainer {
+
+}
+
+/**
+ * 表示一个类或接口。
+ */
+export interface DocClass extends DocClassLike {
 
     /**
-     * 原型成员。
+     * 成员类型。
      */
-    prototypes: DocMember[];
+    memberType: "class" | "interface";
 
     /**
      * 所有泛型的形参。
@@ -233,9 +279,19 @@ export class DocClass extends DocMemberContainer {
     typeParameters?: DocTypeParameter[];
 
     /**
+     * 所有成员。
+     */
+    prototype: DocMemberContainer;
+
+    /**
+     * 所有构造函数。
+     */
+    constructors?: DocMethod[];
+
+    /**
      * 继承类型。
      */
-    extends?: DocType;
+    extends?: DocType[];
 
     /**
      * 实现类型。
@@ -245,82 +301,43 @@ export class DocClass extends DocMemberContainer {
 }
 
 /**
- * 表示一个接口。
- */
-export class DocInterface extends DocMemberContainer {
-
-    /**
-     * 成员类型。
-     */
-    get memberType() { return "interface"; }
-
-    /**
-     * 所有泛型的形参。
-     */
-    typeParameters?: DocTypeParameter[];
-
-    /**
-     * 继承类型。
-     */
-    extends?: DocType[];
-
-}
-
-/**
- * 表示一个命名空间。
- */
-export class DocNamespace extends DocMemberContainer {
-
-    /**
-     * 成员类型。
-     */
-    get memberType() { return "namespace"; }
-
-}
-
-/**
  * 表示一个枚举。
  */
-export class DocEnum extends DocMemberContainer {
+export interface DocEnum extends DocMember, DocMemberContainer {
 
     /**
      * 成员类型。
      */
-    get memberType() { return "enum"; }
-
-    /**
-     * 所有成员。
-     */
-    members: DocEnumMember[];
+    memberType: "enum";
 
 }
 
 /**
  * 表示一个枚举字段。
  */
-export class DocEnumMember extends DocMember {
+export interface DocEnumMember extends DocMember {
 
     /**
      * 成员类型。
      */
-    get memberType() { return "enumMember"; }
+    memberType: "enumMember";
 
     /**
      * 枚举字段值。
      */
-    value: number;
+    value: number | string;
 
 }
 
 /**
  * 表示一个类型别名。
  */
-export class DocTypeAlias extends DocMember {
+export interface DocTypeAlias extends DocMember {
 
     /**
      * 成员类型。
      */
-    get memberType() { return "type"; }
+    memberType: "type";
 
     /**
      * 值类型。
@@ -332,32 +349,17 @@ export class DocTypeAlias extends DocMember {
 /**
  * 表示一个类型。
  */
-export class DocType {
-
-    /**
-     * 类型各组成部分。
-     */
-    parts: (string | boolean | DocSymbol)[] = [];
-
-    toString() {
-        let result = "";
-        for (const part of this.parts) {
-            result += typeof part == "string" ? part : typeof part == "boolean" ? "" : part.name;
-        }
-        return result;
-    }
-
-}
+export type DocType = (string | boolean | DocTypeSymbol)[];
 
 /**
- * 表示一个符号。
+ * 表示一个类型符号。
  */
-export interface DocSymbol {
+export interface DocTypeSymbol {
 
     /**
      * 父符号。
      */
-    parent?: DocSymbol;
+    parent?: DocTypeSymbol;
 
     /**
      * 所属源文件。
@@ -374,12 +376,12 @@ export interface DocSymbol {
 /**
  * 表示一个源文件。
  */
-export class DocSourceFile extends DocEntry {
+export interface DocSourceFile extends DocNode, DocMemberContainer {
 
     /**
      * 判断当前源文件是否是一个标准模块。
      */
-    isCommonJsModule: boolean;
+    commonJsModule?: boolean;
 
     /**
      * 作者。
@@ -397,43 +399,49 @@ export class DocSourceFile extends DocEntry {
     license?: string;
 
     /**
-     * 所有成员项。
+     * 所有导入项。
      */
-    members: DocMember[] = [];
+    imports?: DocImport[];
+
+}
+
+/**
+ * 表示一个导入项。
+ */
+export interface DocImport {
 
     /**
-     * 当前模块的导入项。
-     * 如果值为 true 说明是 import 导入，否则为引用。
+     * 导入的名称。
      */
-    imports: { [key: string]: boolean; } = { __proto__: null };
+    name: string;
 
     /**
-     * 当前模块的导出项。
-     * 键表示导出的名称；值表示成员的实际名称。
+     * 是否是引入。
      */
-    exports: { [key: string]: string; } = { __proto__: null };
+    reference?: boolean;
 
 }
 
 /**
  * 表示一个文档对象。
  */
-export class DocProject {
+export interface DocProject {
 
     /**
      * 所有源文件。
      */
-    sourceFiles: DocSourceFile[] = [];
+    sourceFiles: DocSourceFile[];
 
-    /**
-     * 获取指定文件。
-     * @param sourceFile 要获取的文件名。
-     * @return 返回文件对象。
-     */
-    getSourceFile(sourceFile: string) {
-        return this.sourceFiles.find(file => file.name == sourceFile);
-    }
+}
 
+/**
+ * 解析指定的源码。
+ * @param paths 要解析的路径。
+ * @return 返回已解析的文档对象。
+ */
+export default function parseDoc(...paths: string[]) {
+    const program = ts.createProgram(paths, {});
+    return parseProgram(program, program.getSourceFiles().filter(x => !x.isDeclarationFile));
 }
 
 /**
@@ -444,15 +452,19 @@ export class DocProject {
  */
 export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) {
     const checker = program.getTypeChecker();
-    const result = new DocProject();
+    const result = {
+        sourceFiles: []
+    };
     for (const sourceFile of sourceFiles) {
         result.sourceFiles.push(parseSouceFile(sourceFile));
     }
     return result;
 
     function parseSouceFile(sourceFile: ts.SourceFile) {
-        const result = new DocSourceFile();
-        result.name = sourceFile.fileName;
+        const result: DocSourceFile = {
+            name: sourceFile.fileName
+        };
+
         const jsDoc = getJSDoc(sourceFile);
         if (jsDoc && jsDoc.tags) {
             for (const tag of jsDoc.tags) {
@@ -477,19 +489,32 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 }
             }
         }
-        result.isCommonJsModule = ts.isExternalModule(sourceFile);
-        for (const rf of sourceFile.referencedFiles) {
-            result.imports[rf.fileName] = false;
+
+        if (ts.isExternalModule(sourceFile)) {
+            result.commonJsModule = true;
         }
-        if (result.isCommonJsModule) {
+
+        for (const rf of sourceFile.referencedFiles) {
+            result.imports = result.imports || [];
+            result.imports.push({
+                name: rf.fileName,
+                reference: true
+            });
+        }
+
+        if (result.commonJsModule) {
             for (const importDeclaration of (sourceFile as any).imports) {
-                result.imports[importDeclaration.text] = true;
+                result.imports = result.imports || [];
+                result.imports.push({
+                    name: importDeclaration.text
+                });
             }
+
             for (const symbol of checker.getExportsOfModule(checker.getSymbolAtLocation(sourceFile))) {
-                const member = parseSymbol(symbol);
+                const member = parseMember(symbol);
                 if (member) {
-                    result.exports[symbol.name] = member.name;
-                    result.members.push(member);
+                    member.exportName = symbol.name;
+                    addMember(result, member);
                 }
             }
         } else {
@@ -497,7 +522,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 switch (statement.kind) {
                     case ts.SyntaxKind.VariableStatement:
                         for (const declaration of (statement as ts.VariableStatement).declarationList.declarations) {
-                            result.members.push(parseSymbol(checker.getSymbolAtLocation(declaration.name)));
+                            addMember(result, parseMember(checker.getSymbolAtLocation(declaration.name)));
                         }
                         break;
                     case ts.SyntaxKind.FunctionDeclaration:
@@ -505,115 +530,231 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                     case ts.SyntaxKind.InterfaceDeclaration:
                     case ts.SyntaxKind.EnumDeclaration:
                     case ts.SyntaxKind.TypeAliasDeclaration:
-                        result.members.push(parseSymbol(checker.getSymbolAtLocation((statement as ts.DeclarationStatement).name)));
+                        addMember(result, parseMember(checker.getSymbolAtLocation((statement as ts.DeclarationStatement).name)));
                         break;
                 }
             }
         }
+
         return result;
     }
 
-    function parseSymbol(symbol: ts.Symbol) {
-        let result: DocField | DocMethod | DocClass | DocInterface | DocEnum | DocEnumMember | DocTypeAlias | DocNamespace;
-        const tags = symbol.getJsDocTags();
-        if (symbol.flags & (ts.SymbolFlags.FunctionScopedVariable | ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.Property | ts.SymbolFlags.Accessor) && !(symbol.flags & ts.SymbolFlags.Prototype)) {
-            result = new DocField();
-            result.type = parseType(checker.getTypeOfSymbolAtLocation(symbol, symbol.valueDeclaration));
-        } else if (symbol.flags & (ts.SymbolFlags.Function | ts.SymbolFlags.Method | ts.SymbolFlags.Constructor)) {
-            result = new DocMethod();
-            const signature = checker.getSignatureFromDeclaration(symbol.getDeclarations()[0] as ts.SignatureDeclaration);
-            if (signature.typeParameters) {
-                result.typeParameters = parseTypeParameters(signature.typeParameters);
+    function addMember(container: DocMemberContainer, member: DocMember) {
+        if (member) {
+            const key = member.memberType === "field" || member.memberType === "accessor" || member.memberType === "enumMember" ? "fields" : member.memberType === "method" || member.memberType === "constructor" ? "method" : "type";
+            container[key] = container[key] || [];
+            container[key].push(member);
+        }
+    }
+
+    function parseMember(symbol: ts.Symbol) {
+        if ((symbol as any)._docMember) {
+            return (symbol as any)._docMember as DocMember;
+        }
+
+        if (symbol.flags & (ts.SymbolFlags.FunctionScopedVariable | ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.Property)) {
+            if (symbol.flags & ts.SymbolFlags.Prototype) {
+                return null;
             }
-            const thisParameterSymbol = (signature as any).thisParameter as ts.Symbol;
-            if (thisParameterSymbol) {
-                result.thisType = parseType(checker.getTypeOfSymbolAtLocation(thisParameterSymbol, thisParameterSymbol.valueDeclaration));
+
+            const declaration = symbol.valueDeclaration as ts.VariableDeclaration;
+            const result = createMember<DocField>("field", symbol, declaration);
+            if ((ts as any).isConst(declaration)) {
+                result.const = true;
             }
-            for (const parameterSymbol of signature.getParameters()) {
-                const paramNode = parameterSymbol.valueDeclaration as ts.ParameterDeclaration;
-                const p = new DocParameter();
-                p.name = parameterSymbol.getName();
-                p.type = parseType(checker.getTypeOfSymbolAtLocation(parameterSymbol, paramNode));
-                p.summary = ts.displayPartsToString(parameterSymbol.getDocumentationComment());
-                if (paramNode.initializer) {
-                    p.default = paramNode.initializer.getText();
-                }
-                p.rest = paramNode.dotDotDotToken != null;
-                p.optional = paramNode.questionToken != null || paramNode.dotDotDotToken != null || paramNode.initializer != null;
-                result.parameters.push(p);
+            if (ts.getCombinedModifierFlags(declaration) & ts.ModifierFlags.Readonly) {
+                result.readonly = true;
             }
-            result.returnType = parseType(signature.getReturnType());
-            if (symbol.valueDeclaration) {
-	            const returnDoc = (ts as any).getJSDocReturnTag(symbol.valueDeclaration);
-	            if (returnDoc) {
-	                result.returnSummary = returnDoc.comment;
-	            }
+            result.type = parseType(checker.getTypeOfSymbolAtLocation(symbol, declaration));
+            if (declaration.initializer) {
+                result.default = declaration.initializer.getText();
             }
-        } else if (symbol.flags & ts.SymbolFlags.Class) {
-            result = new DocClass();
-            const type = checker.getDeclaredTypeOfSymbol(symbol) as ts.InterfaceType;
-            if (type.typeParameters) {
-                (result as DocClass).typeParameters = parseTypeParameters(type.typeParameters);
+            return result;
+        }
+
+        if (symbol.flags & ts.SymbolFlags.Accessor) {
+            const result = createMember<DocField>("accessor", symbol);
+            if (!(symbol.flags & ts.SymbolFlags.SetAccessor)) {
+                result.readonly = true;
             }
-            result.members = parseSymbolList(symbol.exports);
-            (result as DocClass).prototypes = parseSymbolList(symbol.members);
-        } else if (symbol.flags & ts.SymbolFlags.Interface) {
-            result = new DocInterface();
-            const type = checker.getDeclaredTypeOfSymbol(symbol) as ts.InterfaceType;
-            if (type.typeParameters) {
-                (result as DocInterface).typeParameters = parseTypeParameters(type.typeParameters);
-            }
-            result.members = parseSymbolList(symbol.members);
-        } else if (symbol.flags & (ts.SymbolFlags.Enum | ts.SymbolFlags.ConstEnum)) {
-            result = new DocEnum();
-            result.members = parseSymbolList(symbol.exports) as DocEnumMember[];
-            let value = 0;
-            for (const member of (result as DocEnum).members) {
-                if (member.value != null) {
-                    value = member.value;
+            result.type = parseType(checker.getTypeOfSymbolAtLocation(symbol, getDeclaration(symbol)));
+            return result;
+        }
+
+        if (symbol.flags & (ts.SymbolFlags.Function | ts.SymbolFlags.Method | ts.SymbolFlags.Constructor)) {
+            const declarations = symbol.getDeclarations();
+            const mainDeclaration = declarations.find(declaration => !!(declaration as ts.MethodDeclaration).body);
+            const memberType = symbol.flags & ts.SymbolFlags.Constructor ? "constructor" : "method";
+            const result = createMember<DocMethod>(memberType, symbol, mainDeclaration);
+            for (const declaration of declarations) {
+                const signature = checker.getSignatureFromDeclaration(declaration as ts.SignatureDeclaration);
+                let method: DocMethod;
+                if (declaration === mainDeclaration) {
+                    method = result;
                 } else {
-                    member.value = value++;
+                    method = createMember<DocMethod>(memberType, signature, declaration);
+                    result.overloads = result.overloads || [];
+                    result.overloads.push(method);
+                }
+                if ((declaration as ts.MethodDeclaration).asteriskToken) {
+                    method.generator = true;
+                }
+                const modifierFlags = ts.getCombinedModifierFlags(declaration);
+                if (modifierFlags & ts.ModifierFlags.Async) {
+                    method.async = true;
+                }
+                if (modifierFlags & ts.ModifierFlags.Abstract) {
+                    method.abstract = true;
+                }
+                if (signature.typeParameters) {
+                    method.typeParameters = parseTypeParameters(signature.typeParameters);
+                }
+                const thisParameterSymbol = (signature as any).thisParameter as ts.Symbol;
+                if (thisParameterSymbol) {
+                    method.thisType = parseType(checker.getTypeOfSymbolAtLocation(thisParameterSymbol, thisParameterSymbol.valueDeclaration));
+                }
+                method.parameters = [];
+                for (const parameterSymbol of signature.getParameters()) {
+                    const paramNode = parameterSymbol.valueDeclaration as ts.ParameterDeclaration;
+                    const p: DocParameter = {
+                        name: parameterSymbol.getName(),
+                        type: parseType(checker.getTypeOfSymbolAtLocation(parameterSymbol, paramNode)),
+                        summary: ts.displayPartsToString(parameterSymbol.getDocumentationComment())
+                    };
+                    if (paramNode.initializer) {
+                        p.default = paramNode.initializer.getText();
+                    }
+                    if (paramNode.dotDotDotToken != null) {
+                        p.rest = true;
+                    }
+                    if (paramNode.questionToken != null || paramNode.dotDotDotToken != null || paramNode.initializer != null) {
+                        p.optional = true;
+                    }
+                    method.parameters.push(p);
+                }
+                method.returnType = parseType(signature.getReturnType());
+                if (symbol.valueDeclaration) {
+                    const returnDoc = (ts as any).getJSDocReturnTag(symbol.valueDeclaration);
+                    if (returnDoc) {
+                        method.returnSummary = returnDoc.comment;
+                    }
                 }
             }
-        } else if (symbol.flags & ts.SymbolFlags.EnumMember) {
-            result = new DocEnumMember();
+            return result;
+        }
+
+        if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
+            const result = createMember<DocClass>(symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol);
+            const type = checker.getDeclaredTypeOfSymbol(symbol) as ts.InterfaceType;
+            if (type.typeParameters) {
+                result.typeParameters = parseTypeParameters(type.typeParameters);
+            }
+
+            for (const baseType of checker.getBaseTypes(type)) {
+                result.extends = result.extends || [];
+                result.extends.push(parseType(baseType));
+            }
+
+            const implementTypes = symbol.valueDeclaration && (ts as any).getClassImplementsHeritageClauseElements(symbol.valueDeclaration) as ts.ExpressionWithTypeArguments[];
+            if (implementTypes) {
+                result.implements = [];
+                for (const implementType of implementTypes) {
+                    result.implements.push(parseType(checker.getTypeAtLocation(implementType.expression)));
+                }
+            }
+
+            if (symbol.exports) {
+                symbol.exports.forEach((symbol, key) => {
+                    const member = parseMember(symbol);
+                    if (member) {
+                        addMember(result, member);
+                    }
+                });
+            }
+
+            result.prototype = {};
+            for (const property of checker.getPropertiesOfType(type)) {
+                const member = parseMember(property);
+                if (member) {
+                    if ((property as any).parent !== symbol) {
+                        member.parent = parseType(checker.getDeclaredTypeOfSymbol((property as any).parent));
+                    }
+                    addMember(result.prototype, member);
+                }
+            }
+            return result;
+        }
+
+        if (symbol.flags & (ts.SymbolFlags.Enum | ts.SymbolFlags.ConstEnum)) {
+            const result = createMember<DocEnum>("enum", symbol);
+
+            let value: string | number = -1;
+            symbol.exports.forEach((symbol, key) => {
+                const member = parseMember(symbol) as DocEnumMember;
+                if (member) {
+                    if (member.value != null) {
+                        value = member.value;
+                    } else {
+                        member.value = typeof value === "number" ? ++value : member.name;
+                    }
+                    addMember(result, member);
+                }
+            });
+            return result;
+        }
+
+        if (symbol.flags & ts.SymbolFlags.EnumMember) {
+            const result = createMember<DocEnumMember>("enumMember", symbol);
             if ((symbol.valueDeclaration as ts.EnumMember).initializer) {
                 result.value = +(symbol.valueDeclaration as ts.EnumMember).initializer.getText();
             }
-        } else if (symbol.flags & ts.SymbolFlags.TypeAlias) {
-            result = new DocTypeAlias();
+            return result;
+        }
+
+        if (symbol.flags & ts.SymbolFlags.TypeAlias) {
+            const result = createMember<DocTypeAlias>("type", symbol);
             result.type = parseType(checker.getDeclaredTypeOfSymbol(symbol));
-        } else if (symbol.flags & (ts.SymbolFlags.Namespace | ts.SymbolFlags.NamespaceModule | ts.SymbolFlags.ExportNamespace)) {
-            result = new DocNamespace();
-            result.members = parseSymbolList(symbol.exports);
-        } else {
-            return null;
+            return result;
         }
-        const declarations = symbol.getDeclarations();
-        if (declarations && declarations.length) {
-            const modifierFlags = ts.getCombinedModifierFlags(declarations[0]);
-            result.private = (modifierFlags & ts.ModifierFlags.Private) != 0;
-            result.protected = (modifierFlags & ts.ModifierFlags.Protected) != 0;
-            result.abstract = (modifierFlags & ts.ModifierFlags.Abstract) != 0;
-            result.async = (modifierFlags & ts.ModifierFlags.Async) != 0;
-            result.const = (modifierFlags & ts.ModifierFlags.Const) != 0;
-            const sourceFile = declarations[0].getSourceFile();
-            result.sourceFile = sourceFile.fileName;
-            const loc = sourceFile.getLineAndCharacterOfPosition(declarations[0].getStart(sourceFile, true));
-            result.sourceLine = loc.line;
-            result.sourceColumn = loc.character;
+
+        if (symbol.flags & (ts.SymbolFlags.Namespace | ts.SymbolFlags.NamespaceModule | ts.SymbolFlags.ExportNamespace)) {
+            const result = createMember<DocNamespace>("namespace", symbol);
+            if (symbol.exports) {
+                symbol.exports.forEach((symbol, key) => {
+                    addMember(result, parseMember(symbol));
+                });
+            }
+            return result;
         }
-        result.name = getSymbolName(symbol);
+
+        return null;
+    }
+
+    function createMember<T extends DocMember>(memberType: T["memberType"], symbol: ts.Symbol | ts.Signature, declaration = getDeclaration(symbol as ts.Symbol)) {
+        const result: DocMember = (symbol as any)._docMember = {
+            memberType: memberType,
+            name: getSymbolName(symbol, declaration)
+        };
+
+        const modifierFlags = ts.getCombinedModifierFlags(declaration);
+        if (modifierFlags & ts.ModifierFlags.Private) {
+            result.private = true;
+        }
+        if (modifierFlags & ts.ModifierFlags.Protected) {
+            result.protected = true;
+        }
+
         result.summary = ts.displayPartsToString(symbol.getDocumentationComment());
-        for (const tag of tags) {
+        for (const tag of symbol.getJsDocTags()) {
             switch (tag.name) {
                 case "desc":
                 case "description":
                 case "remark":
                     if (result.description) {
-                        result.description += "\n";
+                        result.description += "\n" + tag.text;
+                    } else {
+                        result.description = tag.text;
                     }
-                    result.description += tag.text;
                     break;
                 case "see":
                 case "seeAlso":
@@ -630,37 +771,35 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 case "summary":
                     result.summary = tag.text;
                     break;
+                case "internal":
+                    result.internal = true;
+                    break;
                 default:
                     result.tags = result.tags || { __proto__: null };
                     if (result.tags[tag.name]) {
-                        result.tags[tag.name] += "\n";
+                        result.tags[tag.name] += "\n" + tag.text;
+                    } else {
+                        result.tags[tag.name] = tag.text;
                     }
-                    result.tags[tag.name] = tag.text;
                     break;
             }
         }
-        return result;
-    }
 
-    function parseSymbolList(list?: ts.Map<ts.Symbol>, ignoreMembers?: string[]) {
-        const result: DocMember[] = [];
-        if (list) {
-            list.forEach((symbol, key) => {
-                const member = parseSymbol(symbol);
-                if (member) {
-                    result.push(member);
-                }
-            });
-        }
-        return result;
+        const sourceFile = declaration.getSourceFile();
+        result.sourceFile = sourceFile.fileName;
+        const loc = sourceFile.getLineAndCharacterOfPosition(declaration.getStart(sourceFile, true));
+        result.sourceLine = loc.line;
+        result.sourceColumn = loc.character;
+        return result as T;
     }
 
     function parseTypeParameters(typeParameters: ts.TypeParameter[]) {
-        const result = [];
+        const result: DocTypeParameter[] = [];
         for (const typeParameter of typeParameters) {
-            const tp = new DocTypeParameter();
-            tp.name = typeParameter.symbol.getName();
-            tp.summary = ts.displayPartsToString(typeParameter.symbol.getDocumentationComment());
+            const tp: DocTypeParameter = {
+                name: typeParameter.symbol.getName(),
+                summary: ts.displayPartsToString(typeParameter.symbol.getDocumentationComment())
+            };
             if (typeParameter.default) {
                 tp.default = parseType(typeParameter.default);
             }
@@ -673,55 +812,62 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
     }
 
     function parseType(type: ts.Type) {
-        const result = new DocType();
+        if ((type as any)._docMember) {
+            return (type as any)._docMember as DocType;
+        }
+        const result = (type as any)._docMember = [] as DocType;
         const builder = checker.getSymbolDisplayBuilder();
         const writer = {
             writeKeyword(text) {
-                result.parts.push(text);
+                result.push(text);
             },
             writeOperator(text) {
-                result.parts.push(text);
+                result.push(text);
             },
             writePunctuation(text) {
-                result.parts.push(text);
+                result.push(text);
             },
             writeSpace(text) {
-                result.parts.push(text);
+                result.push(text);
             },
             writeStringLiteral(text) {
-                result.parts.push(text);
+                result.push(text);
             },
             writeParameter(text) {
-                result.parts.push(text);
+                result.push(text);
             },
             writeProperty(text) {
-                result.parts.push(text);
+                result.push(text);
             },
             writeSymbol(text, symbol) {
-                result.parts.push(symbolToType(symbol));
+                result.push(symbolToType(symbol));
 
                 function symbolToType(symbol: ts.Symbol) {
-                    const result: DocSymbol = {
-                        name: getSymbolName(symbol),
-                        sourceFile: symbol.getDeclarations() && symbol.getDeclarations()[0] && symbol.getDeclarations()[0].getSourceFile().fileName
+                    if (symbol.flags === ts.SymbolFlags.ValueModule) {
+                        return null;
+                    }
+                    const declaration = getDeclaration(symbol);
+                    const result: DocTypeSymbol = {
+                        name: getSymbolName(symbol, declaration),
+                        sourceFile: declaration && declaration.getSourceFile().fileName
                     };
-                    if ((symbol as any).parent && !((symbol as any).parent.flags as ts.SymbolFlags.Module)) {
+                    if ((symbol as any).parent) {
                         result.parent = symbolToType((symbol as any).parent);
                     }
                     return result;
                 }
             },
             writeLine() {
-                result.parts.push("\n");
+                result.push("\n");
             },
             increaseIndent() {
-                result.parts.push(true);
+                result.push(true);
             },
             decreaseIndent() {
-                result.parts.push(false);
+                result.push(false);
             },
             clear() {
-                result.parts.length = 0;
+                result.length = 0;
             },
             trackSymbol() { },
             reportInaccessibleThisError() { },
@@ -730,30 +876,39 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         builder.buildTypeDisplay(type, writer, null, ts.TypeFormatFlags.UseTypeAliasValue | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
         return result;
     }
-
-    function getSymbolName(symbol: ts.Symbol) {
-        return symbol.valueDeclaration && ts.getNameOfDeclaration(symbol.valueDeclaration) && ts.getNameOfDeclaration(symbol.valueDeclaration).getText() || symbol.getName();
-    }
-
-    function getJSDoc(node: ts.Node) {
-        const jsDocRanges = ts.getLeadingCommentRanges(node.getSourceFile().text, node.pos);
-        if (jsDocRanges && jsDocRanges.length) {
-            const jsDocRange = jsDocRanges[0];
-            const rootJsDoc = (ts as any).parseIsolatedJSDocComment(node.getSourceFile().text, jsDocRange.pos, jsDocRange.end - jsDocRange.pos);
-            if (rootJsDoc && rootJsDoc.jsDoc) {
-                return rootJsDoc.jsDoc as ts.JSDoc;
-            }
-        }
-    }
-
 }
 
 /**
- * 解析指定的源码。
- * @param paths 要解析的路径。
- * @return 返回已解析的文档对象。
+ * 获取类型的名称。
+ * @param type 类型。
+ * @return 返回对应的字符串。
  */
-export default function parseDoc(...paths: string[]) {
-    const program = ts.createProgram(paths, {});
-    return parseProgram(program, program.getSourceFiles().filter(x => !x.isDeclarationFile));
+export function typeToString(type: DocType) {
+    let result = "";
+    for (const part of type) {
+        result += typeof part == "string" ? part : typeof part == "boolean" ? "" : part.name;
+    }
+    return result;
 }
+
+function getJSDoc(node: ts.Node) {
+    const jsDocRanges = ts.getLeadingCommentRanges(node.getSourceFile().text, node.pos);
+    if (jsDocRanges && jsDocRanges.length) {
+        const jsDocRange = jsDocRanges[0];
+        const rootJsDoc = (ts as any).parseIsolatedJSDocComment(node.getSourceFile().text, jsDocRange.pos, jsDocRange.end - jsDocRange.pos);
+        if (rootJsDoc && rootJsDoc.jsDoc) {
+            return rootJsDoc.jsDoc as ts.JSDoc;
+        }
+    }
+}
+
+function getDeclaration(symbol: ts.Symbol) {
+    return symbol.valueDeclaration || symbol.getDeclarations() && symbol.getDeclarations()[symbol.getDeclarations().length - 1];
+}
+
+function getSymbolName(symbol: ts.Symbol | ts.Signature, declaration: ts.Declaration) {
+    const name = declaration && ts.getNameOfDeclaration(declaration);
+    return name ? name.getText() : (symbol as ts.Symbol).getName ? (symbol as ts.Symbol).getName() : (symbol as ts.Symbol).name;
+}
+
+console.log(JSON.stringify(parseDoc(__dirname + "/test/fixture.ts").sourceFiles[1].members, undefined, 2));
