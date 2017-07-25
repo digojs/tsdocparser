@@ -1,2 +1,2 @@
 
-export const a = 1;
+export const exportItem = 1;

@@ -1,8 +1,8 @@
 /**
- * @file asd
+ * @file test
  */
 /// <reference path="fixture-ref.ts" />
-import { a as b } from "./fixture-ref";
+import { exportItem as importItem } from "./fixture-ref";
 
 /** varField */
 var varField1 = 1, varField2 = 2;
@@ -26,15 +26,20 @@ export function exportFunction(p = 1) {
 
 }
 
+export namespace exportFunction {
+
+    /** exportField */
+    export const exportField = 1;
+}
+
 /** exportClass */
 export class exportClass {
 
     /** exportField */
     classField: number;
 
-    constructor() {
-
-    }
+    /** constructor */
+    constructor(p: number) { }
 
     /** classProperty get */
     get classProperty() { return 1; }
@@ -55,6 +60,12 @@ export interface exportClass {
 
     /** classInterfaceField */
     classInterfaceField: number;
+
+    /** indexer - number */
+    [p: number]: any;
+
+    /** indexer - string */
+    [p: string]: number;
 
 }
 
@@ -94,6 +105,14 @@ export namespace exportNamespace {
 
 }
 
+/** exportNamespace */
+export module exportNamespace {
+
+    /** namespaceField2 */
+    export var namespaceField2 = 1;
+
+}
+
 /** exportType */
 export type exportType = number;
 
@@ -112,3 +131,9 @@ export enum exportEnum {
  * @desc desc
  */
 export var internalVaribale = 2;
+
+export class GenericClass<T> {
+
+    field: T;
+
+}

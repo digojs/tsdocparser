@@ -1,8 +1,8 @@
 import * as ts from "typescript";
 /**
- * 表示一个文档项。
+ * 表示一个文档节点。
  */
-export declare abstract class DocEntry {
+export interface DocNode {
     /**
      * 名字。
      */
@@ -15,15 +15,31 @@ export declare abstract class DocEntry {
 /**
  * 表示一个成员。
  */
-export declare abstract class DocMember extends DocEntry {
+export interface DocMember extends DocNode {
     /**
      * 成员类型。
      */
-    readonly abstract memberType: string;
+    memberType: string;
     /**
-     * 成员修饰符。
+     * 成员的导出名。
      */
-    modifiers: DocMemberModifiers;
+    exportName?: string;
+    /**
+     * 成员是内部的。
+     */
+    internal?: boolean;
+    /**
+     * 成员是保护的。
+     */
+    protected?: boolean;
+    /**
+     * 成员是私有的。
+     */
+    private?: boolean;
+    /**
+     * 如果成员是继承的，则返回所属类型。
+     */
+    parent?: DocType;
     /**
      * 所属源文件。
      */
@@ -36,6 +52,18 @@ export declare abstract class DocMember extends DocEntry {
      * 源文件列号(从 0 开始)。
      */
     sourceColumn?: number;
+    /**
+     * 源文件结束行号(从 0 开始)。
+     */
+    sourceEndLine?: number;
+    /**
+     * 源文件结束列号(从 0 开始)。
+     */
+    sourceEndColumn?: number;
+    /**
+     * 当前成员的子成员。
+     */
+    members?: DocMember[];
     /**
      * 完整描述。
      */
@@ -54,106 +82,64 @@ export declare abstract class DocMember extends DocEntry {
     tags?: {
         [tagName: string]: string;
     };
-    toJSON(): any;
 }
 /**
- * 表示成员修饰符。
+ * 表示一个变量、字段或访问器。
  */
-export declare enum DocMemberModifiers {
-    /**
-     * 无修饰符。
-     */
-    none = 0,
-    /**
-     * 公开的。
-     */
-    public = 1,
-    /**
-     * 内部的。
-     */
-    internal = 2,
-    /**
-     * 保护的。
-     */
-    protected = 4,
-    /**
-     * 私有的。
-     */
-    private = 8,
-    /**
-     * 异步的
-     */
-    async = 16,
-    /**
-     * 常量的
-     */
-    const = 32,
-    /**
-     * 只读的。
-     */
-    readonly = 64,
-    /**
-     * 抽象的。
-     */
-    abstract = 128,
-}
-/**
- * 表示一个容器。
- */
-export declare abstract class DocMemberContainer extends DocMember {
-    /**
-     * 所有成员。
-     */
-    members: DocMember[];
-    /**
-     * 获取指定名称的成员。
-     * @param name 要获取的名称。
-     * @return 返回成员对象。
-     */
-    getMember(name: string): DocMember;
-}
-/**
- * 表示一个字段。
- */
-export declare class DocField extends DocMember {
+export interface DocProperty extends DocMember {
     /**
      * 成员类型。
      */
-    readonly memberType: string;
+    memberType: "field" | "accessor" | "enumMember";
+    /**
+     * 字段是常量的
+     */
+    const?: boolean;
+    /**
+     * 字段是只读的。
+     */
+    readonly?: boolean;
     /**
      * 字段类型。
      */
-    type: DocType;
+    type?: DocType;
+    /**
+     * 默认值表达式。
+     */
+    default?: string;
 }
 /**
- * 表示一个方法组。
+ * 表示一个函数、方法、构造函数或索引器。
  */
-export declare class DocMethodGroup extends DocMemberContainer {
+export interface DocMethod extends DocMember {
     /**
      * 成员类型。
      */
-    readonly memberType: string;
+    memberType: "method" | "constructor" | "indexer";
     /**
-     * 所有成员。
+     * 方法的多个重载。
      */
-    members: DocMethod[];
-}
-/**
- * 表示一个方法。
- */
-export declare class DocMethod extends DocMember {
+    overloads?: DocMethod[];
     /**
-     * 成员类型。
+     * 方法是生成器。
      */
-    readonly memberType: string;
+    generator?: boolean;
     /**
-     * 函数执行时 *this* 的类型。
+     * 方法是异步的
      */
-    thisType?: DocType;
+    async?: boolean;
+    /**
+     * 方法是抽象的。
+     */
+    abstract?: boolean;
     /**
      * 所有泛型的形参。
      */
     typeParameters?: DocTypeParameter[];
+    /**
+     * 函数执行时 *this* 的类型。
+     */
+    thisType?: DocType;
     /**
      * 所有形参。
      */
@@ -168,30 +154,9 @@ export declare class DocMethod extends DocMember {
     returnSummary?: string;
 }
 /**
- * 表示一个形参。
+ * 表示一个泛型形参。
  */
-export declare class DocParameter extends DocEntry {
-    /**
-     * 参数类型。
-     */
-    type: DocType;
-    /**
-     * 是否是可选参数。
-     */
-    optional: boolean;
-    /**
-     * 是否是展开参数。
-     */
-    rest: boolean;
-    /**
-     * 默认值。
-     */
-    default?: string;
-}
-/**
- * 表示一个泛型的形参。
- */
-export declare class DocTypeParameter extends DocEntry {
+export interface DocTypeParameter extends DocNode {
     /**
      * 默认类型。
      */
@@ -202,38 +167,34 @@ export declare class DocTypeParameter extends DocEntry {
     extends?: DocType;
 }
 /**
- * 表示一个类。
+ * 表示一个形参。
  */
-export declare class DocClass extends DocMemberContainer {
+export interface DocParameter extends DocNode {
     /**
-     * 成员类型。
+     * 参数类型。
      */
-    readonly memberType: string;
+    type: DocType;
     /**
-     * 原型成员。
+     * 是否是可选参数。
      */
-    prototypes: DocMember[];
+    optional?: boolean;
     /**
-     * 所有泛型的形参。
+     * 是否是展开参数。
      */
-    typeParameters?: DocTypeParameter[];
+    rest?: boolean;
     /**
-     * 继承类型。
+     * 默认值。
      */
-    extends?: DocType;
-    /**
-     * 实现类型。
-     */
-    implements?: DocType[];
+    default?: string;
 }
 /**
- * 表示一个接口。
+ * 表示一个类或接口。
  */
-export declare class DocInterface extends DocMemberContainer {
+export interface DocClass extends DocMember {
     /**
      * 成员类型。
      */
-    readonly memberType: string;
+    memberType: "class" | "interface";
     /**
      * 所有泛型的形参。
      */
@@ -242,50 +203,57 @@ export declare class DocInterface extends DocMemberContainer {
      * 继承类型。
      */
     extends?: DocType[];
-}
-/**
- * 表示一个命名空间。
- */
-export declare class DocNamespace extends DocMemberContainer {
     /**
-     * 成员类型。
+     * 实现类型。
      */
-    readonly memberType: string;
+    implements?: DocType[];
+    /**
+     * 构造函数。
+     */
+    constructor?: DocMethod;
+    /**
+     * 索引器。
+     */
+    indexer?: DocMethod;
+    /**
+     * 所有原型成员。
+     */
+    prototypes?: DocMember[];
+    /**
+     * 所有继承的原型成员。
+     */
+    extendedPototypes?: DocMember[];
 }
 /**
  * 表示一个枚举。
  */
-export declare class DocEnum extends DocMemberContainer {
+export interface DocEnum extends DocMember {
     /**
      * 成员类型。
      */
-    readonly memberType: string;
+    memberType: "enum";
     /**
-     * 所有成员。
+     * 当前成员的子成员。
      */
-    members: DocEnumMember[];
+    members?: DocProperty[];
 }
 /**
- * 表示一个枚举字段。
+ * 表示一个命名空间。
  */
-export declare class DocEnumMember extends DocMember {
+export interface DocNamespace extends DocMember {
     /**
      * 成员类型。
      */
-    readonly memberType: string;
-    /**
-     * 枚举字段值。
-     */
-    value: number;
+    memberType: "namespace";
 }
 /**
  * 表示一个类型别名。
  */
-export declare class DocTypeAlias extends DocMember {
+export interface DocTypeAlias extends DocMember {
     /**
      * 成员类型。
      */
-    readonly memberType: string;
+    memberType: "type";
     /**
      * 值类型。
      */
@@ -294,38 +262,32 @@ export declare class DocTypeAlias extends DocMember {
 /**
  * 表示一个类型。
  */
-export declare class DocType {
-    /**
-     * 类型各组成部分。
-     */
-    parts: (string | boolean | DocSymbol)[];
-    toString(): string;
-}
+export declare type DocType = DocTypePart[];
 /**
- * 表示一个符号。
+ * 表示一个类型组成部分。
  */
-export interface DocSymbol {
+export interface DocTypePart {
     /**
-     * 父符号。
+     * 当前部分的类型。
      */
-    parent?: DocSymbol;
+    type: string;
+    /**
+     * 文本内容。
+     */
+    text: string;
     /**
      * 所属源文件。
      */
-    sourceFile: string;
+    sourceFile?: string;
     /**
-     * 符号名。
+     * 父符号。
      */
-    name: string;
+    parent?: DocTypePart;
 }
 /**
  * 表示一个源文件。
  */
-export declare class DocSourceFile extends DocEntry {
-    /**
-     * 判断当前源文件是否是一个标准模块。
-     */
-    isCommonJsModule: boolean;
+export interface DocSourceFile extends DocNode {
     /**
      * 作者。
      */
@@ -339,53 +301,87 @@ export declare class DocSourceFile extends DocEntry {
      */
     license?: string;
     /**
-     * 所有成员项。
+     * 判断当前源文件是否是一个标准模块。
      */
-    members: DocMember[];
+    commonJsModule?: boolean;
     /**
-     * 当前模块的导入项。
-     * 如果值为 true 说明是 import 导入，否则为引用。
+     * 所有导入项。
      */
-    imports: {
-        [key: string]: boolean;
-    };
+    imports?: DocImport[];
     /**
-     * 当前模块的导出项。
-     * 键表示导出的名称；值表示成员的实际名称。
+     * 当前成员的子成员。
      */
-    exports: {
-        [key: string]: string;
-    };
+    members?: DocMember[];
+}
+/**
+ * 表示一个导入项。
+ */
+export interface DocImport {
+    /**
+     * 导入的名称。
+     */
+    name: string;
+    /**
+     * 是否是引入。
+     */
+    reference?: boolean;
 }
 /**
  * 表示一个文档对象。
  */
-export declare class DocProject {
+export interface DocProject {
     /**
      * 所有源文件。
      */
     sourceFiles: DocSourceFile[];
-    /**
-     * 获取指定文件。
-     * @param sourceFile 要获取的文件名。
-     * @return 返回文件对象。
-     */
-    getSourceFile(sourceFile: string): DocSourceFile;
-    /**
-     * 整理所有成员。
-     */
-    sort(): void;
 }
+/**
+ * 解析指定的源码。
+ * @param paths 要解析的路径。
+ * @return 返回已解析的文档对象。
+ */
+export default function parseDoc(...paths: string[]): {
+    sourceFiles: any[];
+};
 /**
  * 解析指定程序的文档。
  * @param program 要解析的程序。
  * @param sourceFiles 要解析的源文件。
  * @return 返回已解析的文档对象。
  */
-export declare function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]): DocProject;
+export declare function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]): {
+    sourceFiles: any[];
+};
 /**
- * 解析指定的源码。
- * @param paths 要解析的路径。
- * @return 返回已解析的文档对象。
+ * 获取类型的名称。
+ * @param type 类型。
+ * @return 返回对应的字符串。
  */
-export default function parseDoc(...paths: string[]): DocProject;
+export declare function typeToString(type: DocType): string;
+/**
+ * 重新整理归类所有成员。
+ * @param members 要处理的成员。
+ * @return 返回已整理的成员。
+ */
+export declare function sort(members: DocMember[]): DocNamespaceSorted[];
+/**
+ * 表示整理后的命名空间。
+ */
+export interface DocNamespaceSorted {
+    /**
+     * 模块名。
+     */
+    name: string;
+    /**
+     * 当前命名空间所属类。
+     */
+    member?: DocClass | DocEnum;
+    /**
+     * 所有属性。
+     */
+    propteries?: Map<string, DocProperty>;
+    /**
+     * 所有方法。
+     */
+    methods?: Map<string, DocMethod>;
+}
