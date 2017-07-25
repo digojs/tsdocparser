@@ -523,29 +523,37 @@ function sort(members) {
             case "class":
             case "interface":
             case "enum":
-                const newContainer = {
+                container = {
                     name: name,
                     member: member,
                     propteries: new Map(),
                     methods: new Map()
                 };
-                types.push(newContainer);
+                types.push(container);
                 if (member.constructor) {
-                    newContainer.methods.set(`new ${name}`, member.constructor);
+                    container.methods.set(`new ${name}`, member.constructor);
                 }
                 if (member.indexer) {
-                    newContainer.methods.set(`[index]`, member.indexer);
+                    container.methods.set(`[index]`, member.indexer);
                 }
                 if (member.prototypes) {
                     for (const child of member.prototypes) {
-                        addMember(newContainer, child, "");
+                        addMember(container, child, "");
                     }
                 }
                 if (member.extendedPototypes) {
                     for (const child of member.extendedPototypes) {
-                        addMember(newContainer, child, "");
+                        addMember(container, child, "");
                     }
                 }
+                break;
+            case "type":
+                container = {
+                    name: name,
+                    member: member,
+                    propteries: new Map(),
+                    methods: new Map()
+                };
                 break;
         }
         if (member.members) {

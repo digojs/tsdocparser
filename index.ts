@@ -984,29 +984,37 @@ export function sort(members: DocMember[]) {
             case "class":
             case "interface":
             case "enum":
-                const newContainer: DocNamespaceSorted = {
+                container = {
                     name: name,
                     member: member as DocClass | DocEnum,
                     propteries: new Map(),
                     methods: new Map()
                 };
-                types.push(newContainer);
+                types.push(container);
                 if ((member as DocClass).constructor) {
-                    newContainer.methods.set(`new ${name}`, (member as DocClass).constructor);
+                    container.methods.set(`new ${name}`, (member as DocClass).constructor);
                 }
                 if ((member as DocClass).indexer) {
-                    newContainer.methods.set(`[index]`, (member as DocClass).indexer);
+                    container.methods.set(`[index]`, (member as DocClass).indexer);
                 }
                 if ((member as DocClass).prototypes) {
                     for (const child of (member as DocClass).prototypes) {
-                        addMember(newContainer, child, "");
+                        addMember(container, child, "");
                     }
                 }
                 if ((member as DocClass).extendedPototypes) {
                     for (const child of (member as DocClass).extendedPototypes) {
-                        addMember(newContainer, child, "");
+                        addMember(container, child, "");
                     }
                 }
+                break;
+            case "type":
+                container = {
+                    name: name,
+                    member: member as DocTypeAlias,
+                    propteries: new Map(),
+                    methods: new Map()
+                };
                 break;
         }
         if (member.members) {
@@ -1030,7 +1038,7 @@ export interface DocNamespaceSorted {
     /**
      * 当前命名空间所属类。
      */
-    member?: DocClass | DocEnum;
+    member?: DocClass | DocEnum | DocTypeAlias;
 
     /**
      * 所有属性。

@@ -375,7 +375,7 @@ export interface DocNamespaceSorted {
     /**
      * 当前命名空间所属类。
      */
-    member?: DocClass | DocEnum;
+    member?: DocClass | DocEnum | DocTypeAlias;
     /**
      * 所有属性。
      */
