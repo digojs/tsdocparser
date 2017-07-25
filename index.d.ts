@@ -361,9 +361,10 @@ export declare function typeToString(type: DocType): string;
 /**
  * 重新整理归类所有成员。
  * @param members 要处理的成员。
+ * @param publicOnly 是否删除内部成员。
  * @return 返回已整理的成员。
  */
-export declare function sort(members: DocMember[]): DocNamespaceSorted[];
+export declare function sort(members: DocMember[], publicOnly?: boolean): DocNamespaceSorted[];
 /**
  * 表示整理后的命名空间。
  */

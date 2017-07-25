@@ -493,9 +493,10 @@ exports.typeToString = typeToString;
 /**
  * 重新整理归类所有成员。
  * @param members 要处理的成员。
+ * @param publicOnly 是否删除内部成员。
  * @return 返回已整理的成员。
  */
-function sort(members) {
+function sort(members, publicOnly) {
     const global = {
         name: "",
         propteries: new Map(),
@@ -510,6 +511,9 @@ function sort(members) {
     }
     return types;
     function addMember(container, member, prefix) {
+        if (publicOnly && (member.private || member.internal)) {
+            return;
+        }
         const name = prefix + member.name;
         switch (member.memberType) {
             case "field":

@@ -952,10 +952,11 @@ export function typeToString(type: DocType) {
 
 /**
  * 重新整理归类所有成员。
- * @param members 要处理的成员。 
+ * @param members 要处理的成员。
+ * @param publicOnly 是否删除内部成员。
  * @return 返回已整理的成员。
  */
-export function sort(members: DocMember[]) {
+export function sort(members: DocMember[], publicOnly?: boolean) {
     const global: DocNamespaceSorted = {
         name: "",
         propteries: new Map(),
@@ -971,6 +972,9 @@ export function sort(members: DocMember[]) {
     return types;
 
     function addMember(container: DocNamespaceSorted, member: DocMember, prefix: string) {
+        if (publicOnly && (member.private || member.internal)) {
+            return;
+        }
         const name = prefix + member.name;
         switch (member.memberType) {
             case "field":
