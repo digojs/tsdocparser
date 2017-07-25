@@ -20,21 +20,19 @@ var output = parseDoc("foo.ts");
 //       "parameters": [​​​​​
 //         {​​​​​
 //           "name": "a",​​​​​
-//           "type": {​​​​​
-//             "parts": [​​​​​
-//               "number"​​​​​
-//             ]​​​​​
-//           },​​​​​
+//           "type": [{
+//             "type": "keyword",
+//             "text": "number"
+//           }​​​​​]​​​​​,​​​​​
 //           "summary": "The paramteter",​​​​​
 //           "rest": false,​​​​​
 //           "optional": false​​​​​
 //         }​​​​​
 //       ],​​​​​
-//       "returnType": {​​​​​
-//         "parts": [​​​​​
-//           "number"​​​​​
-//         ]​​​​​
-//       },​​​​​
+//       "returnType": [​​​​​{
+//         "type": "keyword",
+//         "text": "number"
+//       }​​​​​]​​​​​,​​​​​
 //       "sourceFile": "test.ts",​​​​​
 //       "sourceLine": 2,​​​​​
 //       "sourceColumn": 0,​​​​​
@@ -42,12 +40,9 @@ var output = parseDoc("foo.ts");
 //       "summary": "The Method"​​​​​
 //     }​​​​​
 //   ],​​​​​
-//   "imports": {},​​​​​
-//   "exports": {​​​​​
-//     "default": "fn"​​​​​
-//   },​​​​​
+//   "imports": [],​​​​​
 //   "name": "test.ts",​​​​​
-//   "isCommonJsModule": true​​​​​
+//   "commonJsModule": true​​​​​
 // }​​​​​
 ```
 
