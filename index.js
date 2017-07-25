@@ -408,21 +408,21 @@ function parseProgram(program, sourceFiles) {
                 });
             },
             writeSymbol(text, symbol) {
-                result.push(symbolToType(symbol));
-                function symbolToType(symbol) {
-                    if (symbol.flags === ts.SymbolFlags.ValueModule) {
-                        return null;
+                writeSymbol(symbol);
+                function writeSymbol(symbol) {
+                    if (symbol.parent && symbol.parent.flags !== ts.SymbolFlags.ValueModule) {
+                        writeSymbol(symbol.parent);
+                        result.push({
+                            type: "punctuation",
+                            text: "."
+                        });
                     }
                     const declaration = getDeclaration(symbol);
-                    const result = {
+                    result.push({
                         type: "symbol",
                         text: getSymbolName(symbol, declaration),
                         sourceFile: declaration && declaration.getSourceFile().fileName
-                    };
-                    if (symbol.parent) {
-                        result.parent = symbolToType(symbol.parent);
-                    }
-                    return result;
+                    });
                 }
             },
             writeLine() {

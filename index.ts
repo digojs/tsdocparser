@@ -355,11 +355,6 @@ export interface DocTypePart {
      */
     sourceFile?: string;
 
-    /**
-     * 父符号。
-     */
-    parent?: DocTypePart;
-
 }
 
 /**
@@ -863,22 +858,22 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 });
             },
             writeSymbol(text, symbol) {
-                result.push(symbolToType(symbol));
+                writeSymbol(symbol);
 
-                function symbolToType(symbol: ts.Symbol) {
-                    if (symbol.flags === ts.SymbolFlags.ValueModule) {
-                        return null;
+                function writeSymbol(symbol: ts.Symbol) {
+                    if ((symbol as any).parent && (symbol as any).parent.flags !== ts.SymbolFlags.ValueModule) {
+                        writeSymbol((symbol as any).parent);
+                        result.push({
+                            type: "punctuation",
+                            text: "."
+                        });
                     }
                     const declaration = getDeclaration(symbol);
-                    const result: DocTypePart = {
+                    result.push({
                         type: "symbol",
                         text: getSymbolName(symbol, declaration),
                         sourceFile: declaration && declaration.getSourceFile().fileName
-                    };
-                    if ((symbol as any).parent) {
-                        result.parent = symbolToType((symbol as any).parent);
-                    }
-                    return result;
+                    });
                 }
             },
             writeLine() {
@@ -999,7 +994,7 @@ export function sort(members: DocMember[], publicOnly?: boolean) {
                     container.methods.set(`new ${name}`, (member as DocClass).constructor);
                 }
                 if ((member as DocClass).indexer) {
-                    container.methods.set(`[index]`, (member as DocClass).indexer);
+                    container.methods.set(`[]`, (member as DocClass).indexer);
                 }
                 if ((member as DocClass).prototypes) {
                     for (const child of (member as DocClass).prototypes) {
