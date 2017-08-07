@@ -2,7 +2,7 @@
  * @file test
  */
 /// <reference path="fixture-ref.ts" />
-import { exportItem as importItem } from "./fixture-ref";
+import { exportItem as importItem, declareType } from "./fixture-ref";
 
 /** varField */
 var varField1 = 1, varField2 = 2;
@@ -134,6 +134,16 @@ export var internalVaribale = 2;
 
 export class GenericClass<T> {
 
-    field: T;
+    field: T[];
 
 }
+
+export var functionType: (num: number) => void;
+
+export var objectType: { field: number };
+
+declare module "./fixture-ref" {
+    export interface declareType { }
+}
+
+export var declareTypeVariable: declareType;

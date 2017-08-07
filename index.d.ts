@@ -37,7 +37,7 @@ export interface DocMember extends DocNode {
      */
     private?: boolean;
     /**
-     * 如果成员是继承的，则返回所属类型。
+     * 返回所属类型。
      */
     parent?: DocType;
     /**
@@ -90,7 +90,7 @@ export interface DocProperty extends DocMember {
     /**
      * 成员类型。
      */
-    memberType: "field" | "accessor" | "enumMember";
+    memberType: "variable" | "field" | "accessor" | "enumMember";
     /**
      * 字段是常量的
      */
@@ -115,7 +115,7 @@ export interface DocMethod extends DocMember {
     /**
      * 成员类型。
      */
-    memberType: "method" | "constructor" | "indexer";
+    memberType: "function" | "method" | "constructor" | "indexer";
     /**
      * 方法的多个重载。
      */
@@ -233,6 +233,10 @@ export interface DocEnum extends DocMember {
      */
     memberType: "enum";
     /**
+     * 枚举是只读的。
+     */
+    const?: boolean;
+    /**
      * 当前成员的子成员。
      */
     members?: DocProperty[];
@@ -270,7 +274,7 @@ export interface DocTypePart {
     /**
      * 当前部分的类型。
      */
-    type: string;
+    type: "keyword" | "space" | "indent" | "unindent" | "line" | "symbol" | "punctuation" | "operator" | "string" | "name";
     /**
      * 文本内容。
      */
@@ -279,10 +283,6 @@ export interface DocTypePart {
      * 所属源文件。
      */
     sourceFile?: string;
-    /**
-     * 父符号。
-     */
-    parent?: DocTypePart;
 }
 /**
  * 表示一个源文件。
@@ -362,9 +362,10 @@ export declare function typeToString(type: DocType): string;
  * 重新整理归类所有成员。
  * @param members 要处理的成员。
  * @param publicOnly 是否删除内部成员。
+ * @param docOnly 是否删除未编写文档的成员。
  * @return 返回已整理的成员。
  */
-export declare function sort(members: DocMember[], publicOnly?: boolean): DocNamespaceSorted[];
+export declare function sort(members: DocMember[], docOnly?: boolean, publicOnly?: boolean): DocNamespaceSorted[];
 /**
  * 表示整理后的命名空间。
  */

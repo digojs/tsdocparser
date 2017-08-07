@@ -48,7 +48,7 @@ export interface DocMember extends DocNode {
     private?: boolean;
 
     /**
-     * 如果成员是继承的，则返回所属类型。
+     * 返回所属类型。
      */
     parent?: DocType;
 
@@ -112,7 +112,7 @@ export interface DocProperty extends DocMember {
     /**
      * 成员类型。
      */
-    memberType: "field" | "accessor" | "enumMember";
+    memberType: "variable" | "field" | "accessor" | "enumMember";
 
     /**
      * 字段是常量的
@@ -144,7 +144,7 @@ export interface DocMethod extends DocMember {
     /**
      * 成员类型。
      */
-    memberType: "method" | "constructor" | "indexer";
+    memberType: "function" | "method" | "constructor" | "indexer";
 
     /**
      * 方法的多个重载。
@@ -295,6 +295,11 @@ export interface DocEnum extends DocMember {
     memberType: "enum";
 
     /**
+     * 枚举是只读的。
+     */
+    const?: boolean;
+
+    /**
      * 当前成员的子成员。
      */
     members?: DocProperty[];
@@ -343,7 +348,7 @@ export interface DocTypePart {
     /**
      * 当前部分的类型。
      */
-    type: string;
+    type: "keyword" | "space" | "indent" | "unindent" | "line" | "symbol" | "punctuation" | "operator" | "string" | "name";
 
     /**
      * 文本内容。
@@ -505,10 +510,9 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             }
 
             for (const symbol of checker.getExportsOfModule(checker.getSymbolAtLocation(sourceFile))) {
-                const member = parseMember(symbol);
+                const member = addMember(result, symbol);
                 if (member) {
                     member.exportName = symbol.name;
-                    addMember(result, member);
                 }
             }
         } else {
@@ -516,7 +520,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 switch (statement.kind) {
                     case ts.SyntaxKind.VariableStatement:
                         for (const declaration of (statement as ts.VariableStatement).declarationList.declarations) {
-                            addMember(result, parseMember(checker.getSymbolAtLocation(declaration.name)));
+                            addMember(result, checker.getSymbolAtLocation(declaration.name));
                         }
                         break;
                     case ts.SyntaxKind.FunctionDeclaration:
@@ -524,7 +528,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                     case ts.SyntaxKind.InterfaceDeclaration:
                     case ts.SyntaxKind.EnumDeclaration:
                     case ts.SyntaxKind.TypeAliasDeclaration:
-                        addMember(result, parseMember(checker.getSymbolAtLocation((statement as ts.DeclarationStatement).name)));
+                        addMember(result, checker.getSymbolAtLocation((statement as ts.DeclarationStatement).name));
                         break;
                 }
             }
@@ -533,29 +537,29 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         return result;
     }
 
+    function addMember(container: DocMember | DocSourceFile, symbol: ts.Symbol) {
+        const member = parseMember(symbol);
+        if (member) {
+            container.members = container.members || [];
+            container.members.push(member);
+        }
+        return member;
+    }
+
     function parseMember(symbol: ts.Symbol) {
         if ((symbol as any)._docMember) {
             return (symbol as any)._docMember as DocMember;
         }
 
         if (symbol.flags & (ts.SymbolFlags.Function | ts.SymbolFlags.Method | ts.SymbolFlags.Constructor | ts.SymbolFlags.Signature)) {
-            const declarations = symbol.getDeclarations();
-            const mainDeclaration = declarations.find(declaration => !!(declaration as ts.MethodDeclaration).body) || declarations[0];
-            const result = createMember<DocMethod>(symbol.flags & ts.SymbolFlags.Constructor ? "constructor" : symbol.flags & ts.SymbolFlags.Signature ? "indexer" : "method", symbol, mainDeclaration);
-            for (const declaration of declarations) {
+            let result: DocMethod;
+            let overloads: DocMethod[];
+            for (const declaration of symbol.getDeclarations()) {
                 if (declaration.flags & ts.NodeFlags.Namespace) {
                     continue;
                 }
                 const signature = checker.getSignatureFromDeclaration(declaration as ts.SignatureDeclaration);
-                let method: DocMethod;
-                if (declaration === mainDeclaration) {
-                    method = result;
-                } else {
-                    method = createMember<DocMethod>(result.memberType, signature, declaration);
-                    result.overloads = result.overloads || [];
-                    result.overloads.push(method);
-                }
-
+                const method = createMember<DocMethod>(symbol.flags & ts.SymbolFlags.Constructor ? "constructor" : symbol.flags & ts.SymbolFlags.Signature ? "indexer" : symbol.flags & ts.SymbolFlags.Method ? "method" : "function", signature, declaration);
                 if ((declaration as ts.MethodDeclaration).asteriskToken) {
                     method.generator = true;
                 }
@@ -573,29 +577,35 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 if (thisParameterSymbol) {
                     method.thisType = parseType(checker.getTypeOfSymbolAtLocation(thisParameterSymbol, thisParameterSymbol.valueDeclaration));
                 }
-                method.parameters = [];
-                for (const parameterSymbol of signature.getParameters()) {
-                    const paramNode = parameterSymbol.valueDeclaration as ts.ParameterDeclaration;
-                    const p: DocParameter = {
-                        name: parameterSymbol.getName(),
-                        type: parseType(checker.getTypeOfSymbolAtLocation(parameterSymbol, paramNode)),
-                        summary: ts.displayPartsToString(parameterSymbol.getDocumentationComment())
-                    };
-                    if (paramNode.initializer) {
-                        p.default = paramNode.initializer.getText();
-                    }
-                    if (paramNode.dotDotDotToken != null) {
-                        p.rest = true;
-                    }
-                    if (paramNode.questionToken != null || paramNode.dotDotDotToken != null || paramNode.initializer != null) {
-                        p.optional = true;
-                    }
-                    method.parameters.push(p);
-                }
+                method.parameters = parseParameters(signature.getParameters());
                 method.returnType = parseType(signature.getReturnType());
                 const returnDoc = (ts as any).getJSDocReturnTag(declaration);
                 if (returnDoc) {
                     method.returnSummary = returnDoc.comment;
+                }
+
+                if (!result && (declaration as ts.MethodDeclaration).body) {
+                    result = method;
+                } else {
+                    overloads = overloads || [];
+                    overloads.push(method);
+                }
+            }
+
+            if (!result && overloads) {
+                result = overloads.shift();
+                if (!overloads.length) {
+                    overloads = undefined;
+                }
+            }
+            if (overloads) {
+                result.overloads = overloads;
+                if (!result.summary) {
+                    for (const overload of overloads) {
+                        if (result.summary = overload.summary) {
+                            break;
+                        }
+                    }
                 }
             }
             return result;
@@ -605,9 +615,12 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             if (symbol.flags & ts.SymbolFlags.Prototype) {
                 return null;
             }
-
             const declaration = symbol.valueDeclaration as ts.VariableDeclaration;
-            const result = createMember<DocProperty>("field", symbol, declaration);
+            const result = createMember<DocProperty>(symbol.flags & ts.SymbolFlags.Property ? "field" : "variable", symbol, declaration);
+            const parentSymbol = (symbol as any).parent as ts.Symbol;
+            if (parentSymbol && (parentSymbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface))) {
+                result.parent = parseType(checker.getDeclaredTypeOfSymbol(parentSymbol));
+            }
             if ((ts as any).isConst(declaration)) {
                 result.const = true;
             }
@@ -625,16 +638,24 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         }
 
         if (symbol.flags & ts.SymbolFlags.Accessor) {
-            const result = createMember<DocProperty>("accessor", symbol);
+            const result = createMember<DocProperty>("accessor", symbol, getDeclaration(symbol));
+            const parentSymbol = (symbol as any).parent as ts.Symbol;
+            if (parentSymbol && (parentSymbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface))) {
+                result.parent = parseType(checker.getDeclaredTypeOfSymbol(parentSymbol));
+            }
             if (!(symbol.flags & ts.SymbolFlags.SetAccessor)) {
                 result.readonly = true;
             }
             result.type = parseType(checker.getTypeOfSymbolAtLocation(symbol, getDeclaration(symbol)));
+            if (result.tags && result.tags.default) {
+                result.default = result.tags.default;
+                delete result.tags.default;
+            }
             return result;
         }
 
         if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
-            const result = createMember<DocClass>(symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol);
+            const result = createMember<DocClass>(symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol, getDeclaration(symbol));
             const type = checker.getDeclaredTypeOfSymbol(symbol) as ts.InterfaceType;
             if (type.typeParameters) {
                 result.typeParameters = parseTypeParameters(type.typeParameters);
@@ -675,12 +696,25 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                     }
                 }
             }
+
+            if (symbol.exports) {
+                symbol.exports.forEach((symbol, key) => {
+                    addMember(result, symbol);
+                });
+            }
             return result;
         }
 
         if (symbol.flags & (ts.SymbolFlags.Enum | ts.SymbolFlags.ConstEnum)) {
-            const result = createMember<DocEnum>("enum", symbol);
-
+            const result = createMember<DocEnum>("enum", symbol, getDeclaration(symbol));
+            if (symbol.flags & ts.SymbolFlags.ConstEnum) {
+                result.const = true;
+            }
+            if (symbol.exports) {
+                symbol.exports.forEach((symbol, key) => {
+                    addMember(result, symbol);
+                });
+            }
             let lastValue = -1;
             for (const member of result.members) {
                 if (member.default == null) {
@@ -693,7 +727,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         }
 
         if (symbol.flags & ts.SymbolFlags.EnumMember) {
-            const result = createMember<DocProperty>("enumMember", symbol);
+            const result = createMember<DocProperty>("enumMember", symbol, getDeclaration(symbol));
             if ((symbol.valueDeclaration as ts.EnumMember).initializer) {
                 result.default = (symbol.valueDeclaration as ts.EnumMember).initializer.getText();
             }
@@ -701,11 +735,17 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         }
 
         if (symbol.flags & (ts.SymbolFlags.Namespace | ts.SymbolFlags.NamespaceModule | ts.SymbolFlags.ExportNamespace)) {
-            return createMember<DocNamespace>("namespace", symbol);
+            const result = createMember<DocNamespace>("namespace", symbol, getDeclaration(symbol));
+            if (symbol.exports) {
+                symbol.exports.forEach((symbol, key) => {
+                    addMember(result, symbol);
+                });
+            }
+            return result;
         }
 
         if (symbol.flags & ts.SymbolFlags.TypeAlias) {
-            const result = createMember<DocTypeAlias>("type", symbol);
+            const result = createMember<DocTypeAlias>("type", symbol, getDeclaration(symbol));
             result.type = parseType(checker.getDeclaredTypeOfSymbol(symbol));
             return result;
         }
@@ -713,14 +753,14 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         return null;
     }
 
-    function createMember<T extends DocMember>(memberType: T["memberType"], symbol: ts.Symbol | ts.Signature, declaration = getDeclaration(symbol as ts.Symbol)) {
-        const result: DocMember = (symbol as any)._docMember = {
+    function createMember<T extends DocMember>(memberType: T["memberType"], symbolOrSignature: ts.Symbol | ts.Signature, declaration: ts.Declaration) {
+        const result: DocMember = (symbolOrSignature as any)._docMember = {
             memberType: memberType,
-            name: getSymbolName(symbol, declaration)
+            name: getSymbolName(symbolOrSignature as ts.Symbol, declaration),
+            summary: memberType === "indexer" ? getJSDoc(declaration) && getJSDoc(declaration).comment.trim() : ts.displayPartsToString(symbolOrSignature.getDocumentationComment())
         };
 
-        result.summary = ts.displayPartsToString(symbol.getDocumentationComment());
-        for (const tag of symbol.getJsDocTags()) {
+        for (const tag of symbolOrSignature.getJsDocTags()) {
             switch (tag.name) {
                 case "desc":
                 case "description":
@@ -777,16 +817,6 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             result.protected = true;
         }
 
-        const parentSymbol = (symbol as any).parent as ts.Symbol;
-        if (parentSymbol && (parentSymbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface))) {
-            result.parent = parseType(checker.getDeclaredTypeOfSymbol(parentSymbol));
-        }
-        if ((symbol as ts.Symbol).exports) {
-            (symbol as ts.Symbol).exports.forEach((symbol, key) => {
-                addMember(result, parseMember(symbol));
-            });
-        }
-
         return result as T;
     }
 
@@ -804,6 +834,29 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 tp.extends = parseType(typeParameter.constraint);
             }
             result.push(tp);
+        }
+        return result;
+    }
+
+    function parseParameters(parameters: ts.Symbol[]) {
+        const result: DocParameter[] = [];
+        for (const parameterSymbol of parameters) {
+            const paramNode = parameterSymbol.valueDeclaration as ts.ParameterDeclaration;
+            const p: DocParameter = {
+                name: parameterSymbol.getName(),
+                type: parseType(checker.getTypeOfSymbolAtLocation(parameterSymbol, paramNode)),
+                summary: ts.displayPartsToString(parameterSymbol.getDocumentationComment())
+            };
+            if (paramNode.initializer) {
+                p.default = paramNode.initializer.getText();
+            }
+            if (paramNode.dotDotDotToken != null) {
+                p.rest = true;
+            }
+            if (paramNode.questionToken != null || paramNode.dotDotDotToken != null || paramNode.initializer != null) {
+                p.optional = true;
+            }
+            result.push(p);
         }
         return result;
     }
@@ -847,13 +900,13 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             },
             writeParameter(text) {
                 result.push({
-                    type: "parameter",
+                    type: "name",
                     text: text
                 });
             },
             writeProperty(text) {
                 result.push({
-                    type: "property",
+                    type: "name",
                     text: text
                 });
             },
@@ -861,25 +914,25 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 writeSymbol(symbol);
 
                 function writeSymbol(symbol: ts.Symbol) {
-                    if ((symbol as any).parent && (symbol as any).parent.flags !== ts.SymbolFlags.ValueModule) {
-                        writeSymbol((symbol as any).parent);
+                    if (symbol.flags & (ts.SymbolFlags.FunctionScopedVariable | ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.TypeParameter | ts.SymbolFlags.PropertyOrAccessor)) {
                         result.push({
-                            type: "punctuation",
-                            text: "."
+                            type: "name",
+                            text: symbol.name
+                        });
+                    } else {
+                        const declaration = getDeclaration(symbol);
+                        result.push({
+                            type: "symbol",
+                            text: getSymbolName(symbol, declaration),
+                            sourceFile: declaration && declaration.getSourceFile().fileName
                         });
                     }
-                    const declaration = getDeclaration(symbol);
-                    result.push({
-                        type: "symbol",
-                        text: getSymbolName(symbol, declaration),
-                        sourceFile: declaration && declaration.getSourceFile().fileName
-                    });
                 }
             },
             writeLine() {
                 result.push({
-                    type: "space",
-                    text: "\n"
+                    type: "line",
+                    text: " "
                 });
             },
             increaseIndent() {
@@ -904,12 +957,6 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         return result;
     }
 
-    function addMember(container: DocMember | DocSourceFile, member: DocMember) {
-        if (member) {
-            container.members = container.members || [];
-            container.members.push(member);
-        }
-    }
 }
 
 function getJSDoc(node: ts.Node) {
@@ -924,12 +971,12 @@ function getJSDoc(node: ts.Node) {
 }
 
 function getDeclaration(symbol: ts.Symbol) {
-    return symbol.valueDeclaration || symbol.getDeclarations() && symbol.getDeclarations()[symbol.getDeclarations().length - 1];
+    return symbol.valueDeclaration || (symbol.getDeclarations() || [])[0];
 }
 
-function getSymbolName(symbol: ts.Symbol | ts.Signature, declaration: ts.Declaration) {
-    const name = declaration && ts.getNameOfDeclaration(declaration);
-    return name ? name.getText() : (symbol as ts.Symbol).getName ? (symbol as ts.Symbol).getName() : (symbol as ts.Symbol).name;
+function getSymbolName(symbol: ts.Symbol, declaration: ts.Declaration) {
+    const nameNode = declaration && ts.getNameOfDeclaration(declaration);
+    return nameNode ? nameNode.getText() : symbol.name;
 }
 
 /**
@@ -949,9 +996,10 @@ export function typeToString(type: DocType) {
  * 重新整理归类所有成员。
  * @param members 要处理的成员。
  * @param publicOnly 是否删除内部成员。
+ * @param docOnly 是否删除未编写文档的成员。
  * @return 返回已整理的成员。
  */
-export function sort(members: DocMember[], publicOnly?: boolean) {
+export function sort(members: DocMember[], docOnly?: boolean, publicOnly?: boolean) {
     const global: DocNamespaceSorted = {
         name: "",
         propteries: new Map(),
@@ -968,6 +1016,9 @@ export function sort(members: DocMember[], publicOnly?: boolean) {
 
     function addMember(container: DocNamespaceSorted, member: DocMember, prefix: string) {
         if (publicOnly && (member.private || member.internal)) {
+            return;
+        }
+        if (docOnly && !member.summary) {
             return;
         }
         const name = prefix + member.name;

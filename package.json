@@ -15,6 +15,7 @@
     "typings": "index.d.ts",
     "scripts": {
         "build": "tsc index.ts -d --target es6 --module commonjs",
+        "watch": "tsc -w index.ts -d --target es6 --module commonjs",
         "test": "node -p \"JSON.stringify(require('./').default('index.ts'), null, 2)\""
     },
     "files": [
