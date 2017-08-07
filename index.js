@@ -457,7 +457,7 @@ function parseProgram(program, sourceFiles) {
             writeSymbol(text, symbol) {
                 writeSymbol(symbol);
                 function writeSymbol(symbol) {
-                    if (symbol.flags & (ts.SymbolFlags.FunctionScopedVariable | ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.TypeParameter | ts.SymbolFlags.PropertyOrAccessor)) {
+                    if (symbol.flags & (ts.SymbolFlags.FunctionScopedVariable | ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.TypeParameter)) {
                         result.push({
                             type: "name",
                             text: symbol.name
@@ -520,26 +520,13 @@ function getSymbolName(symbol, declaration) {
     return nameNode ? nameNode.getText() : symbol.name;
 }
 /**
- * 获取类型的名称。
- * @param type 类型。
- * @return 返回对应的字符串。
- */
-function typeToString(type) {
-    let result = "";
-    for (const part of type) {
-        result += part.text;
-    }
-    return result;
-}
-exports.typeToString = typeToString;
-/**
  * 重新整理归类所有成员。
  * @param members 要处理的成员。
  * @param publicOnly 是否删除内部成员。
  * @param docOnly 是否删除未编写文档的成员。
  * @return 返回已整理的成员。
  */
-function sort(members, docOnly, publicOnly) {
+function sort(members, publicOnly, docOnly) {
     const global = {
         name: "",
         propteries: new Map(),
@@ -562,11 +549,13 @@ function sort(members, docOnly, publicOnly) {
         }
         const name = prefix + member.name;
         switch (member.memberType) {
+            case "variable":
             case "field":
             case "accessor":
             case "enumMember":
                 container.propteries.set(name, member);
                 break;
+            case "function":
             case "method":
                 container.methods.set(name, member);
                 break;
@@ -580,11 +569,13 @@ function sort(members, docOnly, publicOnly) {
                     methods: new Map()
                 };
                 types.push(container);
-                if (member.constructor) {
-                    container.methods.set(`new ${name}`, member.constructor);
+                const constructor = member.constructor;
+                if (typeof constructor === "object" && !(publicOnly && (constructor.private || constructor.internal) && !(docOnly && !constructor.summary))) {
+                    container.methods.set(`new ${name}`, constructor);
                 }
-                if (member.indexer) {
-                    container.methods.set(`[]`, member.indexer);
+                const indexer = member.indexer;
+                if (indexer && !(publicOnly && (indexer.private || indexer.internal) && !(docOnly && !indexer.summary))) {
+                    container.propteries.set(`[]`, indexer);
                 }
                 if (member.prototypes) {
                     for (const child of member.prototypes) {
@@ -614,3 +605,25 @@ function sort(members, docOnly, publicOnly) {
     }
 }
 exports.sort = sort;
+/**
+ * 获取类型的名称。
+ * @param type 类型。
+ * @return 返回对应的字符串。
+ */
+function typeToString(type) {
+    let result = "";
+    for (const part of type) {
+        result += part.text;
+    }
+    return result;
+}
+exports.typeToString = typeToString;
+/**
+ * 精简类型表达式。
+ * @param type 类型。
+ * @return 返回精简的类型。
+ */
+function toSimpleType(type) {
+    return type;
+}
+exports.toSimpleType = toSimpleType;

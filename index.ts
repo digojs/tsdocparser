@@ -675,7 +675,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             }
 
             const constructor = symbol.members.get("__constructor");
-            if (constructor) {
+            if (constructor ) {
                 result.constructor = parseMember(constructor) as DocMethod;
             }
 
@@ -912,9 +912,9 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             },
             writeSymbol(text, symbol) {
                 writeSymbol(symbol);
-
+                
                 function writeSymbol(symbol: ts.Symbol) {
-                    if (symbol.flags & (ts.SymbolFlags.FunctionScopedVariable | ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.TypeParameter | ts.SymbolFlags.PropertyOrAccessor)) {
+                    if (symbol.flags & (ts.SymbolFlags.FunctionScopedVariable | ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.TypeParameter)) {
                         result.push({
                             type: "name",
                             text: symbol.name
@@ -980,26 +980,13 @@ function getSymbolName(symbol: ts.Symbol, declaration: ts.Declaration) {
 }
 
 /**
- * 获取类型的名称。
- * @param type 类型。
- * @return 返回对应的字符串。
- */
-export function typeToString(type: DocType) {
-    let result = "";
-    for (const part of type) {
-        result += part.text;
-    }
-    return result;
-}
-
-/**
  * 重新整理归类所有成员。
  * @param members 要处理的成员。
  * @param publicOnly 是否删除内部成员。
  * @param docOnly 是否删除未编写文档的成员。
  * @return 返回已整理的成员。
  */
-export function sort(members: DocMember[], docOnly?: boolean, publicOnly?: boolean) {
+export function sort(members: DocMember[], publicOnly?: boolean, docOnly?: boolean) {
     const global: DocNamespaceSorted = {
         name: "",
         propteries: new Map(),
@@ -1023,11 +1010,13 @@ export function sort(members: DocMember[], docOnly?: boolean, publicOnly?: boole
         }
         const name = prefix + member.name;
         switch (member.memberType) {
+            case "variable":
             case "field":
             case "accessor":
             case "enumMember":
                 container.propteries.set(name, member as DocProperty);
                 break;
+            case "function":
             case "method":
                 container.methods.set(name, member as DocMethod);
                 break;
@@ -1041,11 +1030,13 @@ export function sort(members: DocMember[], docOnly?: boolean, publicOnly?: boole
                     methods: new Map()
                 };
                 types.push(container);
-                if ((member as DocClass).constructor) {
-                    container.methods.set(`new ${name}`, (member as DocClass).constructor);
+                const constructor = (member as DocClass).constructor;
+                if (typeof constructor === "object" && !(publicOnly && (constructor.private || constructor.internal) &&! (docOnly && !constructor.summary))) {
+                    container.methods.set(`new ${name}`, constructor);
                 }
-                if ((member as DocClass).indexer) {
-                    container.methods.set(`[]`, (member as DocClass).indexer);
+                const indexer = (member as DocClass).indexer;
+                if (indexer && !(publicOnly && (indexer.private || indexer.internal) &&! (docOnly && !indexer.summary))) {
+                    container.propteries.set(`[]`, indexer);
                 }
                 if ((member as DocClass).prototypes) {
                     for (const child of (member as DocClass).prototypes) {
@@ -1093,11 +1084,33 @@ export interface DocNamespaceSorted {
     /**
      * 所有属性。
      */
-    propteries?: Map<string, DocProperty>;
+    propteries?: Map<string, DocProperty | DocMethod>;
 
     /**
      * 所有方法。
      */
     methods?: Map<string, DocMethod>;
 
+}
+
+/**
+ * 获取类型的名称。
+ * @param type 类型。
+ * @return 返回对应的字符串。
+ */
+export function typeToString(type: DocType) {
+    let result = "";
+    for (const part of type) {
+        result += part.text;
+    }
+    return result;
+}
+
+/**
+ * 精简类型表达式。
+ * @param type 类型。
+ * @return 返回精简的类型。
+ */
+export function toSimpleType(type: DocType) {
+    return type;
 }

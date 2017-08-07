@@ -353,19 +353,13 @@ export declare function parseProgram(program: ts.Program, sourceFiles: ts.Source
     sourceFiles: any[];
 };
 /**
- * 获取类型的名称。
- * @param type 类型。
- * @return 返回对应的字符串。
- */
-export declare function typeToString(type: DocType): string;
-/**
  * 重新整理归类所有成员。
  * @param members 要处理的成员。
  * @param publicOnly 是否删除内部成员。
  * @param docOnly 是否删除未编写文档的成员。
  * @return 返回已整理的成员。
  */
-export declare function sort(members: DocMember[], docOnly?: boolean, publicOnly?: boolean): DocNamespaceSorted[];
+export declare function sort(members: DocMember[], publicOnly?: boolean, docOnly?: boolean): DocNamespaceSorted[];
 /**
  * 表示整理后的命名空间。
  */
@@ -381,9 +375,21 @@ export interface DocNamespaceSorted {
     /**
      * 所有属性。
      */
-    propteries?: Map<string, DocProperty>;
+    propteries?: Map<string, DocProperty | DocMethod>;
     /**
      * 所有方法。
      */
     methods?: Map<string, DocMethod>;
 }
+/**
+ * 获取类型的名称。
+ * @param type 类型。
+ * @return 返回对应的字符串。
+ */
+export declare function typeToString(type: DocType): string;
+/**
+ * 精简类型表达式。
+ * @param type 类型。
+ * @return 返回精简的类型。
+ */
+export declare function toSimpleType(type: DocType): DocTypePart[];

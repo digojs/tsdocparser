@@ -147,3 +147,7 @@ declare module "./fixture-ref" {
 }
 
 export var declareTypeVariable: declareType;
+
+export interface CCtor {
+
+}

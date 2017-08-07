@@ -1,1 +1,1 @@
-console.log(JSON.stringify(require("../").default(__dirname + "/fixture.ts"), undefined, 2));
+console.log(JSON.stringify(require("../").sort(require("../").default(__dirname + "/fixture.ts").sourceFiles[1].members), undefined, 2));
