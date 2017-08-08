@@ -92,13 +92,17 @@ export interface DocProperty extends DocMember {
      */
     memberType: "variable" | "field" | "accessor" | "enumMember";
     /**
+     * 字段可空。
+     */
+    optional?: boolean;
+    /**
      * 字段是常量的
      */
     const?: boolean;
     /**
      * 字段是只读的。
      */
-    readonly?: boolean;
+    readOnly?: boolean;
     /**
      * 字段类型。
      */
