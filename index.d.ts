@@ -270,11 +270,11 @@ export interface DocTypeAlias extends DocMember {
 /**
  * 表示一个类型。
  */
-export declare type DocType = DocTypePart[];
+export declare type DocType = DocTypeToken[];
 /**
  * 表示一个类型组成部分。
  */
-export interface DocTypePart {
+export interface DocTypeToken {
     /**
      * 当前部分的类型。
      */
@@ -396,4 +396,4 @@ export declare function typeToString(type: DocType): string;
  * @param type 类型。
  * @return 返回精简的类型。
  */
-export declare function toSimpleType(type: DocType): DocTypePart[];
+export declare function toSimpleType(type: DocType): any;

@@ -343,12 +343,12 @@ export interface DocTypeAlias extends DocMember {
 /**
  * 表示一个类型。
  */
-export type DocType = DocTypePart[];
+export type DocType = DocTypeToken[];
 
 /**
  * 表示一个类型组成部分。
  */
-export interface DocTypePart {
+export interface DocTypeToken {
 
     /**
      * 当前部分的类型。
@@ -803,6 +803,15 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 case "internal":
                     result.internal = true;
                     break;
+                case "name":
+                    result.name = tag.text;
+                    break;
+                case "private":
+                    result.private = true;
+                    break;
+                case "protected":
+                    result.protected = true;
+                    break;
                 default:
                     result.tags = result.tags || { __proto__: null };
                     if (result.tags[tag.name]) {
@@ -971,6 +980,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             reportInaccessibleThisError() { },
             reportPrivateInBaseOfClassExpression() { }
         }, null, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseTypeAliasValue) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
+
         return result;
     }
 
@@ -1142,9 +1152,100 @@ export function typeToString(type: DocType) {
  * @return 返回精简的类型。
  */
 export function toSimpleType(type: DocType) {
-    return type;
+    if ((type as any)._simple) {
+        return (type as any)._simple;
+    }
+    const result = (type as any)._simple = [];
+    read(result, 0, type.length);
+    return result;
 
-    function minify(type) {
+    function read(result: DocType, start: number, end: number) {
+        let ignoreString: boolean;
+        let ignoreNumber: boolean;
+        while (start < end) {
+            const token = type[start];
+            if (token.text === "new" && token.type === "keyword") {  // new (...) => ...
+                result.push({ type: "keyword", text: "function" });
+                return end;
+            } else if (token.text === "(") { // (...) => ..., (...)
+                const right = matched(start, end, "(", ")");
+                if (right + 2 < end && type[right + 2].text === "=>") {
+                    result.push({ type: "keyword", text: "function" });
+                    return end;
+                }
+                const temp: DocType = [];
+                read(temp, start + 1, right);
+                if (temp.length === 1) {
+                    result.push(temp[0]);
+                } else {
+                    result.push(type[start], ...temp, type[right]);
+                }
+                start = right + 1;
+            } else if (token.text === "{" || token.text === "class" && token.type === "keyword") {  // {...}
+                const right = matched(start, end, "{", "}");
+                result.push({ type: "keyword", text: "object" });
+                start = right + 1;
+            } else if (token.text === "[") {   // [...]
+                const right = matched(start, end, "[", "]");
+                result.push({ type: "keyword", text: "array" });
+                start = right + 1;
+            } else if (token.type === "string" && /^(\d+|".*")$/.test(token.text)) {  // "", 0
+                result.push({ type: "keyword", text: /^"/.test(token.text) ? "string" : "number" });
+                start++;
+            } else {
+                do {
+                    result.push(type[start++]);
+                    if (start < end && type[start].text === "<") {
+                        const right = matched(start, end, "<", ">");
+                        while (start < right) {
+                            result.push(type[start++]);
+                        }
+                    }
+                } while (start < end && type[start].text !== "|" && type[start].text !== "&" && type[start].text !== "," && type[start].type !== "space");
+            }
 
+            while (start < end && type[start].text === "[") {
+                const right = matched(start, end, "[", "]");
+                while (start <= right) {
+                    result.push(type[start++]);
+                }
+            }
+
+            if (ignoreString && result[result.length - 1].type === "keyword" && result[result.length - 1].text === "string" || ignoreNumber && result[result.length - 1].type === "keyword" && result[result.length - 1].text === "number") {
+                result.pop();
+                result.pop();
+                result.pop();
+                result.pop();
+            }
+
+            while (start + 2 < end && type[start].type === "space" && type[start + 1].text === "|" && type[start + 2].type === "space") {
+                const next = start + 3 < end && type[start + 3];
+                if (next && next.type === "keyword" && (next.text === "null" || next.text === "undefined")) {
+                    start += 4;
+                    continue;
+                }
+                if (result[result.length - 1].type === "keyword") {
+                    ignoreString = ignoreString || result[result.length - 1].text === "string";
+                    ignoreNumber = ignoreNumber || result[result.length - 1].text === "number";
+                }
+                result.push(type[start], type[start + 1], type[start + 2]);
+                start += 3;
+                break;
+            }
+        }
+    }
+
+    function matched(start: number, end: number, left: string, right: string) {
+        for (let count = 1; ++start < end;) {
+            if (type[start].text === left) {
+                count++;
+            } else if (type[start].text === right) {
+                count--;
+                if (count === 0) {
+                    break;
+                }
+            }
+        }
+        return start;
     }
 }
