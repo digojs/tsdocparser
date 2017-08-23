@@ -691,10 +691,23 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 if (own) {
                     for (const baseType of baseTypes) {
                         if (baseType.getProperty(childSymbol.name)) {
-                            copyMember(member, parseMember(baseType.getProperty(childSymbol.name)))
                             own = false;
+                            break;
                         }
                     }
+                }
+                if (!member.summary && own === false) {
+                    const copySummaryFromBaseType = (type) => {
+                        for (const baseType of checker.getBaseTypes(type)) {
+                            if (baseType.getProperty(childSymbol.name)) {
+                                copyMember(member, parseMember(baseType.getProperty(childSymbol.name)));
+                            }
+                            if (!member.summary) {
+                                copySummaryFromBaseType(baseType);
+                            }
+                        }
+                    };
+                    copySummaryFromBaseType(type);
                 }
                 if (member) {
                     if (own) {
