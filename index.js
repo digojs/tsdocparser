@@ -174,8 +174,10 @@ function parseProgram(program, sourceFiles) {
                 }
             }
             if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
-                result.members = result.members || [];
-                result.members.push(parseAsInterface(symbol));
+                const type = parseAsInterface(symbol);
+                type.prototypes = type.prototypes || [];
+                type.prototypes.unshift(result);
+                return type;
             }
             return result;
         }
@@ -613,12 +615,6 @@ function sort(members, publicOnly, docOnly) {
             case "function":
             case "method":
                 container.methods.set(name, member);
-                if (member.members) {
-                    for (const child of member.members) {
-                        addMember(container, child, prefix);
-                    }
-                    member.members = [];
-                }
                 break;
             case "class":
             case "interface":

@@ -618,8 +618,10 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             }
 
             if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
-                result.members = result.members || [];
-                result.members.push(parseAsInterface(symbol));
+                const type = parseAsInterface(symbol);
+                type.prototypes = type.prototypes || [];
+                type.prototypes.unshift(result);
+                return type;
             }
             return result;
         }
@@ -1083,12 +1085,6 @@ export function sort(members: DocMember[], publicOnly?: boolean, docOnly?: boole
             case "function":
             case "method":
                 container.methods.set(name, member as DocMethod);
-                if ((member as DocMethod).members) {
-                    for (const child of (member as DocMethod).members) {
-                        addMember(container, child, prefix);
-                    }
-                    (member as DocMethod).members = [];
-                }
                 break;
             case "class":
             case "interface":
