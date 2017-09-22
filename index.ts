@@ -560,7 +560,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             let result: DocMethod;
             let overloads: DocMethod[];
             for (const declaration of symbol.getDeclarations()) {
-                if (declaration.flags & ts.NodeFlags.Namespace) {
+                if (declaration.flags & ts.NodeFlags.Namespace || !(declaration as any).parameters) {
                     continue;
                 }
                 const signature = checker.getSignatureFromDeclaration(declaration as ts.SignatureDeclaration);
@@ -597,11 +597,14 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 }
             }
 
+            // 如果所有函数都没有主体，则创建新主体。
             if (!result && overloads) {
-                result = overloads.shift();
-                if (!overloads.length) {
-                    overloads = undefined;
-                }
+                result = {
+                    memberType: overloads[0].memberType,
+                    name: overloads[0].name,
+                    overloads: overloads
+                } as DocMethod;
+                copyMember(result, overloads[0]);
             }
             if (overloads) {
                 result.overloads = overloads;
@@ -612,6 +615,11 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                         }
                     }
                 }
+            }
+
+            if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
+                result.members = result.members || [];
+                result.members.push(parseAsInterface(symbol));
             }
             return result;
         }
@@ -655,77 +663,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         }
 
         if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
-            const result = createMember<DocClass>(symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol, getDeclaration(symbol), (symbol as any).parent);
-            const type = checker.getDeclaredTypeOfSymbol(symbol) as ts.InterfaceType;
-            if (type.typeParameters) {
-                result.typeParameters = parseTypeParameters(type.typeParameters);
-            }
-
-            for (const baseType of checker.getBaseTypes(type)) {
-                result.extends = result.extends || [];
-                result.extends.push(parseType(baseType));
-            }
-
-            const implementTypes = symbol.valueDeclaration && (ts as any).getClassImplementsHeritageClauseElements(symbol.valueDeclaration) as ts.ExpressionWithTypeArguments[];
-            if (implementTypes) {
-                for (const implementType of implementTypes) {
-                    result.implements = result.implements || [];
-                    result.implements.push(parseType(checker.getTypeAtLocation(implementType.expression)));
-                }
-            }
-
-            const constructor = symbol.members.get("__constructor");
-            if (constructor) {
-                result.constructor = parseMember(constructor) as DocMethod;
-            }
-
-            const index = symbol.members.get("__index");
-            if (index) {
-                result.indexer = parseMember(index) as DocMethod;
-            }
-
-            const baseTypes = checker.getBaseTypes(type);
-            for (const childSymbol of checker.getPropertiesOfType(type)) {
-                const member = parseMember(childSymbol);
-                let own = (childSymbol as any).parent as ts.Symbol === symbol;
-                if (own) {
-                    for (const baseType of baseTypes) {
-                        if (baseType.getProperty(childSymbol.name)) {
-                            own = false;
-                            break;
-                        }
-                    }
-                }
-                if (!member.summary && own === false) {
-                    const copySummaryFromBaseType = (type) => {
-                        for (const baseType of checker.getBaseTypes(type)) {
-                            if (baseType.getProperty(childSymbol.name)) {
-                                copyMember(member, parseMember(baseType.getProperty(childSymbol.name)));
-                            }
-                            if (!member.summary) {
-                                copySummaryFromBaseType(baseType);
-                            }
-                        }
-                    };
-                    copySummaryFromBaseType(type);
-                }
-                if (member) {
-                    if (own) {
-                        result.prototypes = result.prototypes || [];
-                        result.prototypes.push(member);
-                    } else {
-                        result.extendedPototypes = result.extendedPototypes || [];
-                        result.extendedPototypes.push(member);
-                    }
-                }
-            }
-
-            if (symbol.exports) {
-                symbol.exports.forEach((symbol, key) => {
-                    addMember(result, symbol);
-                });
-            }
-            return result;
+            return parseAsInterface(symbol);
         }
 
         if (symbol.flags & (ts.SymbolFlags.Enum | ts.SymbolFlags.ConstEnum)) {
@@ -757,7 +695,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             return result;
         }
 
-        if (symbol.flags & (ts.SymbolFlags.Namespace | ts.SymbolFlags.NamespaceModule | ts.SymbolFlags.ExportNamespace)) {
+        if (symbol.flags & (ts.SymbolFlags.Namespace | ts.SymbolFlags.NamespaceModule)) {
             const result = createMember<DocNamespace>("namespace", symbol, getDeclaration(symbol), (symbol as any).parent);
             if (symbol.exports) {
                 symbol.exports.forEach((symbol, key) => {
@@ -774,6 +712,80 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         }
 
         return null;
+    }
+
+    function parseAsInterface(symbol: ts.Symbol) {
+        const result = createMember<DocClass>(symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol, getDeclaration(symbol), (symbol as any).parent);
+        const type = checker.getDeclaredTypeOfSymbol(symbol) as ts.InterfaceType;
+        if (type.typeParameters) {
+            result.typeParameters = parseTypeParameters(type.typeParameters);
+        }
+
+        for (const baseType of checker.getBaseTypes(type)) {
+            result.extends = result.extends || [];
+            result.extends.push(parseType(baseType));
+        }
+
+        const implementTypes = symbol.valueDeclaration && (ts as any).getClassImplementsHeritageClauseElements(symbol.valueDeclaration) as ts.ExpressionWithTypeArguments[];
+        if (implementTypes) {
+            for (const implementType of implementTypes) {
+                result.implements = result.implements || [];
+                result.implements.push(parseType(checker.getTypeAtLocation(implementType.expression)));
+            }
+        }
+
+        const constructor = symbol.members.get("__constructor" as any);
+        if (constructor) {
+            result.constructor = parseMember(constructor) as DocMethod;
+        }
+
+        const index = symbol.members.get("__index" as any);
+        if (index) {
+            result.indexer = parseMember(index) as DocMethod;
+        }
+
+        const baseTypes = checker.getBaseTypes(type);
+        for (const childSymbol of checker.getPropertiesOfType(type)) {
+            const member = parseMember(childSymbol);
+            let own = (childSymbol as any).parent as ts.Symbol === symbol;
+            if (own) {
+                for (const baseType of baseTypes) {
+                    if (baseType.getProperty(childSymbol.name)) {
+                        own = false;
+                        break;
+                    }
+                }
+            }
+            if (!member.summary && own === false) {
+                const copySummaryFromBaseType = (type) => {
+                    for (const baseType of checker.getBaseTypes(type)) {
+                        if (baseType.getProperty(childSymbol.name)) {
+                            copyMember(member, parseMember(baseType.getProperty(childSymbol.name)));
+                        }
+                        if (!member.summary) {
+                            copySummaryFromBaseType(baseType);
+                        }
+                    }
+                };
+                copySummaryFromBaseType(type);
+            }
+            if (member) {
+                if (own) {
+                    result.prototypes = result.prototypes || [];
+                    result.prototypes.push(member);
+                } else {
+                    result.extendedPototypes = result.extendedPototypes || [];
+                    result.extendedPototypes.push(member);
+                }
+            }
+        }
+
+        if (symbol.exports) {
+            symbol.exports.forEach((symbol, key) => {
+                addMember(result, symbol);
+            });
+        }
+        return result;
     }
 
     function createMember<T extends DocMember>(memberType: T["memberType"], symbolOrSignature: ts.Symbol | ts.Signature, declaration: ts.Declaration, parentSymbol: ts.Symbol) {
@@ -992,7 +1004,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             trackSymbol() { },
             reportInaccessibleThisError() { },
             reportPrivateInBaseOfClassExpression() { }
-        }, null, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseTypeAliasValue) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
+        }, null, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
 
         return result;
     }
@@ -1071,6 +1083,12 @@ export function sort(members: DocMember[], publicOnly?: boolean, docOnly?: boole
             case "function":
             case "method":
                 container.methods.set(name, member as DocMethod);
+                if ((member as DocMethod).members) {
+                    for (const child of (member as DocMethod).members) {
+                        addMember(container, child, prefix);
+                    }
+                    (member as DocMethod).members = [];
+                }
                 break;
             case "class":
             case "interface":

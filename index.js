@@ -118,7 +118,7 @@ function parseProgram(program, sourceFiles) {
             let result;
             let overloads;
             for (const declaration of symbol.getDeclarations()) {
-                if (declaration.flags & ts.NodeFlags.Namespace) {
+                if (declaration.flags & ts.NodeFlags.Namespace || !declaration.parameters) {
                     continue;
                 }
                 const signature = checker.getSignatureFromDeclaration(declaration);
@@ -154,11 +154,14 @@ function parseProgram(program, sourceFiles) {
                     overloads.push(method);
                 }
             }
+            // 如果所有函数都没有主体，则创建新主体。
             if (!result && overloads) {
-                result = overloads.shift();
-                if (!overloads.length) {
-                    overloads = undefined;
-                }
+                result = {
+                    memberType: overloads[0].memberType,
+                    name: overloads[0].name,
+                    overloads: overloads
+                };
+                copyMember(result, overloads[0]);
             }
             if (overloads) {
                 result.overloads = overloads;
@@ -169,6 +172,10 @@ function parseProgram(program, sourceFiles) {
                         }
                     }
                 }
+            }
+            if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
+                result.members = result.members || [];
+                result.members.push(parseAsInterface(symbol));
             }
             return result;
         }
@@ -210,72 +217,7 @@ function parseProgram(program, sourceFiles) {
             return result;
         }
         if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
-            const result = createMember(symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol, getDeclaration(symbol), symbol.parent);
-            const type = checker.getDeclaredTypeOfSymbol(symbol);
-            if (type.typeParameters) {
-                result.typeParameters = parseTypeParameters(type.typeParameters);
-            }
-            for (const baseType of checker.getBaseTypes(type)) {
-                result.extends = result.extends || [];
-                result.extends.push(parseType(baseType));
-            }
-            const implementTypes = symbol.valueDeclaration && ts.getClassImplementsHeritageClauseElements(symbol.valueDeclaration);
-            if (implementTypes) {
-                for (const implementType of implementTypes) {
-                    result.implements = result.implements || [];
-                    result.implements.push(parseType(checker.getTypeAtLocation(implementType.expression)));
-                }
-            }
-            const constructor = symbol.members.get("__constructor");
-            if (constructor) {
-                result.constructor = parseMember(constructor);
-            }
-            const index = symbol.members.get("__index");
-            if (index) {
-                result.indexer = parseMember(index);
-            }
-            const baseTypes = checker.getBaseTypes(type);
-            for (const childSymbol of checker.getPropertiesOfType(type)) {
-                const member = parseMember(childSymbol);
-                let own = childSymbol.parent === symbol;
-                if (own) {
-                    for (const baseType of baseTypes) {
-                        if (baseType.getProperty(childSymbol.name)) {
-                            own = false;
-                            break;
-                        }
-                    }
-                }
-                if (!member.summary && own === false) {
-                    const copySummaryFromBaseType = (type) => {
-                        for (const baseType of checker.getBaseTypes(type)) {
-                            if (baseType.getProperty(childSymbol.name)) {
-                                copyMember(member, parseMember(baseType.getProperty(childSymbol.name)));
-                            }
-                            if (!member.summary) {
-                                copySummaryFromBaseType(baseType);
-                            }
-                        }
-                    };
-                    copySummaryFromBaseType(type);
-                }
-                if (member) {
-                    if (own) {
-                        result.prototypes = result.prototypes || [];
-                        result.prototypes.push(member);
-                    }
-                    else {
-                        result.extendedPototypes = result.extendedPototypes || [];
-                        result.extendedPototypes.push(member);
-                    }
-                }
-            }
-            if (symbol.exports) {
-                symbol.exports.forEach((symbol, key) => {
-                    addMember(result, symbol);
-                });
-            }
-            return result;
+            return parseAsInterface(symbol);
         }
         if (symbol.flags & (ts.SymbolFlags.Enum | ts.SymbolFlags.ConstEnum)) {
             const result = createMember("enum", symbol, getDeclaration(symbol), symbol.parent);
@@ -305,7 +247,7 @@ function parseProgram(program, sourceFiles) {
             }
             return result;
         }
-        if (symbol.flags & (ts.SymbolFlags.Namespace | ts.SymbolFlags.NamespaceModule | ts.SymbolFlags.ExportNamespace)) {
+        if (symbol.flags & (ts.SymbolFlags.Namespace | ts.SymbolFlags.NamespaceModule)) {
             const result = createMember("namespace", symbol, getDeclaration(symbol), symbol.parent);
             if (symbol.exports) {
                 symbol.exports.forEach((symbol, key) => {
@@ -320,6 +262,74 @@ function parseProgram(program, sourceFiles) {
             return result;
         }
         return null;
+    }
+    function parseAsInterface(symbol) {
+        const result = createMember(symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol, getDeclaration(symbol), symbol.parent);
+        const type = checker.getDeclaredTypeOfSymbol(symbol);
+        if (type.typeParameters) {
+            result.typeParameters = parseTypeParameters(type.typeParameters);
+        }
+        for (const baseType of checker.getBaseTypes(type)) {
+            result.extends = result.extends || [];
+            result.extends.push(parseType(baseType));
+        }
+        const implementTypes = symbol.valueDeclaration && ts.getClassImplementsHeritageClauseElements(symbol.valueDeclaration);
+        if (implementTypes) {
+            for (const implementType of implementTypes) {
+                result.implements = result.implements || [];
+                result.implements.push(parseType(checker.getTypeAtLocation(implementType.expression)));
+            }
+        }
+        const constructor = symbol.members.get("__constructor");
+        if (constructor) {
+            result.constructor = parseMember(constructor);
+        }
+        const index = symbol.members.get("__index");
+        if (index) {
+            result.indexer = parseMember(index);
+        }
+        const baseTypes = checker.getBaseTypes(type);
+        for (const childSymbol of checker.getPropertiesOfType(type)) {
+            const member = parseMember(childSymbol);
+            let own = childSymbol.parent === symbol;
+            if (own) {
+                for (const baseType of baseTypes) {
+                    if (baseType.getProperty(childSymbol.name)) {
+                        own = false;
+                        break;
+                    }
+                }
+            }
+            if (!member.summary && own === false) {
+                const copySummaryFromBaseType = (type) => {
+                    for (const baseType of checker.getBaseTypes(type)) {
+                        if (baseType.getProperty(childSymbol.name)) {
+                            copyMember(member, parseMember(baseType.getProperty(childSymbol.name)));
+                        }
+                        if (!member.summary) {
+                            copySummaryFromBaseType(baseType);
+                        }
+                    }
+                };
+                copySummaryFromBaseType(type);
+            }
+            if (member) {
+                if (own) {
+                    result.prototypes = result.prototypes || [];
+                    result.prototypes.push(member);
+                }
+                else {
+                    result.extendedPototypes = result.extendedPototypes || [];
+                    result.extendedPototypes.push(member);
+                }
+            }
+        }
+        if (symbol.exports) {
+            symbol.exports.forEach((symbol, key) => {
+                addMember(result, symbol);
+            });
+        }
+        return result;
     }
     function createMember(memberType, symbolOrSignature, declaration, parentSymbol) {
         const result = symbolOrSignature._docMember = {
@@ -530,7 +540,7 @@ function parseProgram(program, sourceFiles) {
             trackSymbol() { },
             reportInaccessibleThisError() { },
             reportPrivateInBaseOfClassExpression() { }
-        }, null, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseTypeAliasValue) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
+        }, null, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
         return result;
     }
 }
@@ -603,6 +613,12 @@ function sort(members, publicOnly, docOnly) {
             case "function":
             case "method":
                 container.methods.set(name, member);
+                if (member.members) {
+                    for (const child of member.members) {
+                        addMember(container, child, prefix);
+                    }
+                    member.members = [];
+                }
                 break;
             case "class":
             case "interface":
