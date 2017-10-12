@@ -298,6 +298,7 @@ function parseProgram(program, sourceFiles) {
                 for (const baseType of baseTypes) {
                     if (baseType.getProperty(childSymbol.name)) {
                         own = false;
+                        member.override = parseType(baseType, true);
                         break;
                     }
                 }

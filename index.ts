@@ -83,6 +83,11 @@ export interface DocMember extends DocNode {
     members?: DocMember[];
 
     /**
+     * 当前成员覆盖的类型。
+     */
+    override?: DocType;
+
+    /**
      * 完整描述。
      */
     description?: string;
@@ -754,6 +759,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                 for (const baseType of baseTypes) {
                     if (baseType.getProperty(childSymbol.name)) {
                         own = false;
+                        member.override = parseType(baseType, true);
                         break;
                     }
                 }

@@ -65,6 +65,10 @@ export interface DocMember extends DocNode {
      */
     members?: DocMember[];
     /**
+     * 当前成员覆盖的类型。
+     */
+    override?: DocType;
+    /**
      * 完整描述。
      */
     description?: string;
