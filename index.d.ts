@@ -230,7 +230,7 @@ export interface DocClass extends DocMember {
     /**
      * 所有继承的原型成员。
      */
-    extendedPototypes?: DocMember[];
+    extendedPrototypes?: DocMember[];
 }
 /**
  * 表示一个枚举。

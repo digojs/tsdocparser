@@ -290,7 +290,7 @@ export interface DocClass extends DocMember {
     /**
      * 所有继承的原型成员。
      */
-    extendedPototypes?: DocMember[];
+    extendedPrototypes?: DocMember[];
 
 }
 
@@ -782,8 +782,8 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
                     result.prototypes = result.prototypes || [];
                     result.prototypes.push(member);
                 } else {
-                    result.extendedPototypes = result.extendedPototypes || [];
-                    result.extendedPototypes.push(member);
+                    result.extendedPrototypes = result.extendedPrototypes || [];
+                    result.extendedPrototypes.push(member);
                 }
             }
         }
@@ -1115,8 +1115,8 @@ export function sort(members: DocMember[], publicOnly?: boolean, docOnly?: boole
                         addMember(container, child, "");
                     }
                 }
-                if ((member as DocClass).extendedPototypes) {
-                    for (const child of (member as DocClass).extendedPototypes) {
+                if ((member as DocClass).extendedPrototypes) {
+                    for (const child of (member as DocClass).extendedPrototypes) {
                         addMember(container, child, "");
                     }
                 }

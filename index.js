@@ -322,8 +322,8 @@ function parseProgram(program, sourceFiles) {
                     result.prototypes.push(member);
                 }
                 else {
-                    result.extendedPototypes = result.extendedPototypes || [];
-                    result.extendedPototypes.push(member);
+                    result.extendedPrototypes = result.extendedPrototypes || [];
+                    result.extendedPrototypes.push(member);
                 }
             }
         }
@@ -640,8 +640,8 @@ function sort(members, publicOnly, docOnly) {
                         addMember(container, child, "");
                     }
                 }
-                if (member.extendedPototypes) {
-                    for (const child of member.extendedPototypes) {
+                if (member.extendedPrototypes) {
+                    for (const child of member.extendedPrototypes) {
                         addMember(container, child, "");
                     }
                 }

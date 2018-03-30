@@ -1,7 +1,9 @@
 # TSDocParser
-Document comment parser for TypeScript & JavaScript.
+TSDocParser is a documentation comment core parser for TypeScript & JavaScript.
 
-This libaray is designed to parse TypeScript & JavaScript source code and create a data json which you can do more with. It does not create full html documents for you.
+It reads documentation comments(The well known JSDoc format like `/** ... */`) from TypeScript & JavaScript source files and products a json file, which you can do more with(e.g. generate html files).
+
+If you are looking for a full html document generator, go to [TSDoc](https://www.npmjs.com/package/tsdoc)
 
 ## Usage
 ```bash
@@ -14,9 +16,12 @@ var parseDoc = require("tsdocparser").default;
 var output = parseDoc("foo.ts");
 // =>
 // ​ {
-//   "members": [​​​​​
+//   // All exported members in foo.js
+//   "members": [​​​​​  
 //     {​​​​​
 //       "memberType": "method",​​​​​
+//       "name": "fn",​​​​​
+//       "summary": "The Method"​​​​​,​​​​​
 //       "parameters": [​​​​​
 //         {​​​​​
 //           "name": "a",​​​​​
@@ -35,9 +40,7 @@ var output = parseDoc("foo.ts");
 //       }​​​​​]​​​​​,​​​​​
 //       "sourceFile": "test.ts",​​​​​
 //       "sourceLine": 2,​​​​​
-//       "sourceColumn": 0,​​​​​
-//       "name": "fn",​​​​​
-//       "summary": "The Method"​​​​​
+//       "sourceColumn": 0
 //     }​​​​​
 //   ],​​​​​
 //   "imports": [],​​​​​
