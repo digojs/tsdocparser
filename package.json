@@ -16,7 +16,8 @@
     "scripts": {
         "build": "tsc index.ts -d --target es6 --module commonjs",
         "watch": "tsc -w index.ts -d --target es6 --module commonjs",
-        "test": "node -p \"JSON.stringify(require('./').default('index.ts'), null, 2)\""
+        "test": "node -p \"JSON.stringify(require('./').default('index.ts'), null, 2)\"",
+        "debug": "node --inspect-brk -p \"JSON.stringify(require('./').default('index.ts'), null, 2)\""
     },
     "files": [
         "index.js",

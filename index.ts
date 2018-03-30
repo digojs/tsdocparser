@@ -800,7 +800,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         const result: DocMember = (symbolOrSignature as any)._docMember = {
             memberType: memberType,
             name: getSymbolName(symbolOrSignature as ts.Symbol, declaration),
-            summary: memberType === "indexer" ? getJSDoc(declaration) && getJSDoc(declaration).comment.trim() : ts.displayPartsToString(symbolOrSignature.getDocumentationComment())
+            summary: memberType === "indexer" ? getJSDoc(declaration) && getJSDoc(declaration).comment.trim() : ts.displayPartsToString(symbolOrSignature.getDocumentationComment(checker))
         };
 
         if (parentSymbol && (parentSymbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface))) {
@@ -881,13 +881,13 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
         for (const typeParameter of typeParameters) {
             const tp: DocTypeParameter = {
                 name: typeParameter.symbol.getName(),
-                summary: ts.displayPartsToString(typeParameter.symbol.getDocumentationComment())
+                summary: ts.displayPartsToString(typeParameter.symbol.getDocumentationComment(checker))
             };
-            if (typeParameter.default) {
-                tp.default = parseType(typeParameter.default);
+            if (typeParameter.getDefault()) {
+                tp.default = parseType(typeParameter.getDefault());
             }
-            if (typeParameter.constraint) {
-                tp.extends = parseType(typeParameter.constraint);
+            if (typeParameter.getConstraint()) {
+                tp.extends = parseType(typeParameter.getConstraint());
             }
             result.push(tp);
         }
@@ -901,7 +901,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             const p: DocParameter = {
                 name: parameterSymbol.getName(),
                 type: parseType(checker.getTypeOfSymbolAtLocation(parameterSymbol, paramNode)),
-                summary: ts.displayPartsToString(parameterSymbol.getDocumentationComment())
+                summary: ts.displayPartsToString(parameterSymbol.getDocumentationComment(checker))
             };
             if (paramNode.initializer) {
                 p.default = paramNode.initializer.getText();
@@ -1012,7 +1012,7 @@ export function parseProgram(program: ts.Program, sourceFiles: ts.SourceFile[]) 
             trackSymbol() { },
             reportInaccessibleThisError() { },
             reportPrivateInBaseOfClassExpression() { }
-        }, null, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
+        }, undefined, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
 
         return result;
     }

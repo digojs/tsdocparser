@@ -338,7 +338,7 @@ function parseProgram(program, sourceFiles) {
         const result = symbolOrSignature._docMember = {
             memberType: memberType,
             name: getSymbolName(symbolOrSignature, declaration),
-            summary: memberType === "indexer" ? getJSDoc(declaration) && getJSDoc(declaration).comment.trim() : ts.displayPartsToString(symbolOrSignature.getDocumentationComment())
+            summary: memberType === "indexer" ? getJSDoc(declaration) && getJSDoc(declaration).comment.trim() : ts.displayPartsToString(symbolOrSignature.getDocumentationComment(checker))
         };
         if (parentSymbol && (parentSymbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface))) {
             result.parent = parseType(checker.getDeclaredTypeOfSymbol(parentSymbol));
@@ -415,13 +415,13 @@ function parseProgram(program, sourceFiles) {
         for (const typeParameter of typeParameters) {
             const tp = {
                 name: typeParameter.symbol.getName(),
-                summary: ts.displayPartsToString(typeParameter.symbol.getDocumentationComment())
+                summary: ts.displayPartsToString(typeParameter.symbol.getDocumentationComment(checker))
             };
-            if (typeParameter.default) {
-                tp.default = parseType(typeParameter.default);
+            if (typeParameter.getDefault()) {
+                tp.default = parseType(typeParameter.getDefault());
             }
-            if (typeParameter.constraint) {
-                tp.extends = parseType(typeParameter.constraint);
+            if (typeParameter.getConstraint()) {
+                tp.extends = parseType(typeParameter.getConstraint());
             }
             result.push(tp);
         }
@@ -434,7 +434,7 @@ function parseProgram(program, sourceFiles) {
             const p = {
                 name: parameterSymbol.getName(),
                 type: parseType(checker.getTypeOfSymbolAtLocation(parameterSymbol, paramNode)),
-                summary: ts.displayPartsToString(parameterSymbol.getDocumentationComment())
+                summary: ts.displayPartsToString(parameterSymbol.getDocumentationComment(checker))
             };
             if (paramNode.initializer) {
                 p.default = paramNode.initializer.getText();
@@ -543,7 +543,7 @@ function parseProgram(program, sourceFiles) {
             trackSymbol() { },
             reportInaccessibleThisError() { },
             reportPrivateInBaseOfClassExpression() { }
-        }, null, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
+        }, undefined, (keepTypeAlias ? ts.TypeFormatFlags.InTypeAlias : ts.TypeFormatFlags.UseAliasDefinedOutsideCurrentScope) | ts.TypeFormatFlags.WriteArrowStyleSignature | ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral);
         return result;
     }
 }
@@ -694,11 +694,11 @@ function toSimpleType(type) {
         let ignoreNumber;
         while (start < end) {
             const token = type[start];
-            if (token.text === "new" && token.type === "keyword") {
+            if (token.text === "new" && token.type === "keyword") { // new (...) => ...
                 result.push({ type: "keyword", text: "function" });
                 return end;
             }
-            else if (token.text === "(") {
+            else if (token.text === "(") { // (...) => ..., (...)
                 const right = matched(start, end, "(", ")");
                 if (right + 2 < end && type[right + 2].text === "=>") {
                     result.push({ type: "keyword", text: "function" });
@@ -714,17 +714,17 @@ function toSimpleType(type) {
                 }
                 start = right + 1;
             }
-            else if (token.text === "{" || token.text === "class" && token.type === "keyword") {
+            else if (token.text === "{" || token.text === "class" && token.type === "keyword") { // {...}
                 const right = matched(start, end, "{", "}");
                 result.push({ type: "keyword", text: "object" });
                 start = right + 1;
             }
-            else if (token.text === "[") {
+            else if (token.text === "[") { // [...]
                 const right = matched(start, end, "[", "]");
                 result.push({ type: "keyword", text: "array" });
                 start = right + 1;
             }
-            else if (token.type === "string" && /^(\d+|".*")$/.test(token.text)) {
+            else if (token.type === "string" && /^(\d+|".*")$/.test(token.text)) { // "", 0
                 result.push({ type: "keyword", text: /^"/.test(token.text) ? "string" : "number" });
                 start++;
             }
