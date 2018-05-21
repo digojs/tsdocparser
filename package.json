@@ -1,6 +1,6 @@
 {
     "name": "tsdocparser",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "repository": "https://github.com/digojs/tsdocparser",
     "description": "Documentation comment parser for TypeScript & JavaScript",
     "author": "xuld <xuld@vip.qq.com>",
