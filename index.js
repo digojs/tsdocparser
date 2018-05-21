@@ -417,10 +417,10 @@ function parseProgram(program, sourceFiles) {
                 name: typeParameter.symbol.getName(),
                 summary: ts.displayPartsToString(typeParameter.symbol.getDocumentationComment(checker))
             };
-            if (typeParameter.getDefault()) {
+            if (typeParameter.getDefault && typeParameter.getDefault()) {
                 tp.default = parseType(typeParameter.getDefault());
             }
-            if (typeParameter.getConstraint()) {
+            if (typeParameter.getConstraint && typeParameter.getConstraint()) {
                 tp.extends = parseType(typeParameter.getConstraint());
             }
             result.push(tp);
