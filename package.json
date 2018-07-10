@@ -1,6 +1,6 @@
 {
     "name": "tsdocparser",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "repository": "https://github.com/digojs/tsdocparser",
     "description": "Documentation comment parser for TypeScript & JavaScript",
     "author": "xuld <xuld@vip.qq.com>",
@@ -10,7 +10,7 @@
     ],
     "license": "MIT",
     "dependencies": {
-        "typescript": "next"
+        "typescript": "^2.8.3"
     },
     "typings": "index.d.ts",
     "scripts": {
