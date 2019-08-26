@@ -30,12 +30,12 @@ export namespace object {
     export var t_interface: Interface
     export var t_enum: Enum
     export var t_enumField: Enum.x
-    export var t_const_enum: Enum
+    export var t_const_enum: ConstEnum
     export var t_const_enumField: ConstEnum.x
     export var t_function: () => false
 }
 export namespace expression {
-    export var t_intersectioner: 1 & string
+    export var t_intersectioner: void & string
     export var t_union: 1 | 0
     export function t_conditional<T>(): T extends (infer K)[] ? K : null { return null }
     export var t_array: readonly 1[]

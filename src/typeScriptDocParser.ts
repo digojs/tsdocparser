@@ -19,22 +19,32 @@ export function parseProgram(program: ts.Program, sourceFiles = program.getRootF
 	const checker = program.getTypeChecker()
 	const result: ParsedDoc = {
 		sourceObject: program,
-		sourceFiles: sourceFiles.map(sourceFile => parseSouceFile(sourceFile, checker))
+		sourceFiles: sourceFiles.map(sourceFile => getDocNode(sourceFile, checker, parseSouceFile))
 	}
 	return result
 }
 
-function parseSouceFile(sourceFile: ts.SourceFile, checker: ts.TypeChecker) {
-	const result: DocSourceFile = {
-		sourceObject: sourceFile,
-		fileName: ts.normalizePath(sourceFile.fileName),
-		name: sourceFile.moduleName || sourceFile.fileName,
-		declaration: sourceFile.isDeclarationFile,
-		module: ts.isExternalModule(sourceFile),
-		summary: "",
-		imports: [],
-		members: []
+const docSymbol = Symbol("doc")
+
+/** 获取文档节点 */
+function getDocNode<N extends ts.Node | ts.Symbol | ts.Type, R extends (N extends ts.Type ? DocType : DocNode)>(node: N, checker: ts.TypeChecker, parser: (result: R, node: N, checker: ts.TypeChecker) => void) {
+	if (node[docSymbol]) {
+		return node[docSymbol] as R
 	}
+	const docNode = node[docSymbol] = {} as R
+	parser(docNode, node, checker)
+	return docNode
+}
+
+function parseSouceFile(result: DocSourceFile, sourceFile: ts.SourceFile, checker: ts.TypeChecker) {
+	result.sourceObject = sourceFile
+	result.fileName = ts.normalizePath(sourceFile.fileName)
+	result.name = sourceFile.moduleName || sourceFile.fileName
+	result.declaration = sourceFile.isDeclarationFile
+	result.module = ts.isExternalModule(sourceFile)
+	result.summary = ""
+	result.imports = []
+	result.members = []
 	for (const jsDoc of getJSDocComments(sourceFile)) {
 		if (jsDoc.tags && jsDoc.tags.some(tag => tag.tagName.text === "file" || tag.tagName.text === "overview" || tag.tagName.text === "fileoverview" || tag.tagName.text === "fileOverview" || tag.tagName.text === "copyright" || tag.tagName.text === "license" || tag.tagName.text === "licence" || tag.tagName.text === "module")) {
 			for (const tag of jsDoc.tags) {
@@ -81,104 +91,104 @@ function parseSouceFile(sourceFile: ts.SourceFile, checker: ts.TypeChecker) {
 			})
 		}
 		for (const symbol of checker.getExportsOfModule(checker.getSymbolAtLocation(sourceFile))) {
-			result.members.push(parseMember(symbol, checker))
+			result.members.push(getMember(symbol, checker))
 		}
 	} else {
 		if (sourceFile.locals) {
 			sourceFile.locals.forEach(symbol => {
-				result.members.push(parseMember(symbol, checker))
+				result.members.push(getMember(symbol, checker))
 			})
 		}
 	}
 	return result
 }
 
-function parseMember(symbol: ts.Symbol, checker: ts.TypeChecker) {
+function getMember(symbol: ts.Symbol, checker: ts.TypeChecker) {
+	return getDocNode(symbol, checker, parseMember)
+}
+
+function parseMember(result: DocMember, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	if (symbol.flags & (ts.SymbolFlags.Function | ts.SymbolFlags.Method | ts.SymbolFlags.Constructor | ts.SymbolFlags.Signature)) {
-		return parseMethod(symbol, checker)
+		return parseMethod(result as DocMethod, symbol, checker)
 	}
 	if (symbol.flags & (ts.SymbolFlags.FunctionScopedVariable | ts.SymbolFlags.BlockScopedVariable | ts.SymbolFlags.Property | ts.SymbolFlags.EnumMember)) {
-		return parseProperty(symbol, checker)
+		return parseProperty(result as DocProperty, symbol, checker)
 	}
 	if (symbol.flags & ts.SymbolFlags.Accessor) {
-		return parseAccessor(symbol, checker)
+		return parseAccessor(result as DocProperty, symbol, checker)
 	}
 	if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface)) {
-		return parseClass(symbol, checker)
+		return parseClass(result as DocClass, symbol, checker)
 	}
 	if (symbol.flags & (ts.SymbolFlags.Enum | ts.SymbolFlags.ConstEnum)) {
-		return parseEnum(symbol, checker)
+		return parseEnum(result as DocEnum, symbol, checker)
 	}
 	if (symbol.flags & (ts.SymbolFlags.Namespace | ts.SymbolFlags.NamespaceModule)) {
-		return parseNamespace(symbol, checker)
+		return parseNamespace(result as DocNamespace, symbol, checker)
 	}
 	if (symbol.flags & ts.SymbolFlags.TypeAlias) {
-		return parseTypeAlias(symbol, checker)
+		return parseTypeAlias(result as DocTypeAlias, symbol, checker)
 	}
-	return createMember("field", symbol, symbol, symbol.valueDeclaration || symbol.getDeclarations()[0], checker)
+	return parseCommonMember(result, "field", symbol, symbol, symbol.valueDeclaration || symbol.getDeclarations()[0], checker)
 }
 
-function parseMethod(symbol: ts.Symbol, checker: ts.TypeChecker) {
+function parseMethod(result: DocMethod, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	const declarations = symbol.getDeclarations().filter(declaration => declaration.kind !== ts.SyntaxKind.ModuleDeclaration && declaration.kind !== ts.SyntaxKind.InterfaceDeclaration) as ts.SignatureDeclaration[]
 	const implementation = declarations.length === 1 ? declarations[0] : declarations.find(checker.isImplementationOfOverload)
-	const method = parseMethodSignature(checker.getSignatureFromDeclaration(implementation), symbol, checker)
+	parseMethodSignature(result, checker.getSignatureFromDeclaration(implementation), symbol, checker)
 	if (declarations.length > 1) {
-		method.overloads = declarations.filter(declaration => declaration !== implementation).map(declaration => parseMethodSignature(checker.getSignatureFromDeclaration(declaration), symbol, checker))
+		result.overloads = declarations.filter(declaration => declaration !== implementation).map(declaration => parseMethodSignature({} as DocMethod, checker.getSignatureFromDeclaration(declaration), symbol, checker))
 	}
 	if (symbol.flags & (ts.SymbolFlags.Class | ts.SymbolFlags.Interface | ts.SymbolFlags.Namespace)) {
-		method.class = parseClass(symbol, checker)
+		parseClass(result.class = {} as DocClass, symbol, checker)
 	}
-	return method
 }
 
-function parseMethodSignature(signature: ts.Signature, symbol: ts.Symbol, checker: ts.TypeChecker) {
+function parseMethodSignature(result: DocMethod, signature: ts.Signature, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	const flags = symbol.getFlags()
 	const modifierFlags = ts.getCombinedModifierFlags(signature.declaration)
 	const returnDoc = ts.getJSDocReturnTag(signature.declaration)
-	const result = createMember<DocMethod>(flags & ts.SymbolFlags.Signature ? "signature" : flags & ts.SymbolFlags.Constructor ? "constructor" : flags & ts.SymbolFlags.Method ? "method" : "function", signature, symbol, signature.getDeclaration(), checker)
+	parseCommonMember(result, flags & ts.SymbolFlags.Signature ? "signature" : flags & ts.SymbolFlags.Constructor ? "constructor" : flags & ts.SymbolFlags.Method ? "method" : "function", signature, symbol, signature.getDeclaration(), checker)
 	result.async = !!(modifierFlags & ts.ModifierFlags.Async)
 	result.generator = !!(signature.declaration as ts.MethodDeclaration).asteriskToken
 	if (signature.typeParameters) {
-		result.typeParameters = signature.typeParameters.map((typeParameter, index) => parseTypeParameter(typeParameter, signature.getDeclaration().typeParameters[index], checker))
+		result.typeParameters = signature.typeParameters.map((typeParameter, index) => parseTypeParameter({} as DocTypeParameter, typeParameter, signature.getDeclaration().typeParameters[index], checker))
 	}
-	result.parameters = signature.getParameters().map(parameter => parseParameter(parameter, checker))
-	result.returnType = parseType(signature.getReturnType(), checker)
+	result.parameters = signature.getParameters().map(parameter => parseParameter({} as DocParameter, parameter, checker))
+	result.returnType = getType(signature.getReturnType(), checker)
 	result.returnSummary = returnDoc ? returnDoc.comment : ""
 	return result
 }
 
-function parseTypeParameter(typeParameter: ts.TypeParameter, declaration: ts.TypeParameterDeclaration, checker: ts.TypeChecker) {
-	const result: DocTypeParameter = {
-		sourceObject: declaration,
-		name: typeParameter.getSymbol().getName(),
-		summary: ts.displayPartsToString(typeParameter.symbol.getDocumentationComment(checker))
-	}
+function parseTypeParameter(result: DocTypeParameter, typeParameter: ts.TypeParameter, declaration: ts.TypeParameterDeclaration, checker: ts.TypeChecker) {
+	result.sourceObject = declaration
+	result.name = typeParameter.getSymbol().getName()
+	result.summary = ts.displayPartsToString(typeParameter.symbol.getDocumentationComment(checker))
+	result.type = getType(typeParameter, checker)
 	if (typeParameter.getDefault()) {
-		result.default = parseType(typeParameter.getDefault(), checker)
+		result.default = getType(typeParameter.getDefault(), checker)
 	}
 	if (typeParameter.getConstraint()) {
-		result.extends = parseType(typeParameter.getConstraint(), checker)
+		result.extends = getType(typeParameter.getConstraint(), checker)
 	}
 	return result
 }
 
-function parseParameter(parameter: ts.Symbol, checker: ts.TypeChecker) {
+function parseParameter(result: DocParameter, parameter: ts.Symbol, checker: ts.TypeChecker) {
 	const parameterDeclaration = parameter.valueDeclaration as ts.ParameterDeclaration
-	const result: DocParameter = {
-		sourceObject: parameter.valueDeclaration as ts.ParameterDeclaration,
-		summary: ts.displayPartsToString(parameter.getDocumentationComment(checker)),
-		rest: !!parameterDeclaration.dotDotDotToken,
-		name: parameter.getName(),
-		optional: !!parameterDeclaration.questionToken || !!parameterDeclaration.dotDotDotToken || !!parameterDeclaration.initializer,
-		type: parseType(checker.getTypeOfSymbolAtLocation(parameter, parameterDeclaration), checker)
-	}
+	result.sourceObject = parameter.valueDeclaration as ts.ParameterDeclaration
+	result.summary = ts.displayPartsToString(parameter.getDocumentationComment(checker))
+	result.rest = !!parameterDeclaration.dotDotDotToken
+	result.name = parameter.getName()
+	result.optional = !!parameterDeclaration.questionToken || !!parameterDeclaration.dotDotDotToken || !!parameterDeclaration.initializer
+	result.type = getType(checker.getTypeOfSymbolAtLocation(parameter, parameterDeclaration), checker)
 	if (parameterDeclaration.initializer) {
 		result.default = parameterDeclaration.initializer
 	}
 	return result
 }
 
-function parseProperty(symbol: ts.Symbol, checker: ts.TypeChecker) {
+function parseProperty(result: DocProperty, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	const declaration = (symbol.valueDeclaration || symbol.getDeclarations()[0]) as ts.VariableDeclaration
 	let top = declaration as ts.Declaration
 	while (top.kind === ts.SyntaxKind.BindingElement || top.kind === ts.SyntaxKind.ArrayBindingPattern || top.kind === ts.SyntaxKind.ObjectBindingPattern) {
@@ -186,57 +196,57 @@ function parseProperty(symbol: ts.Symbol, checker: ts.TypeChecker) {
 	}
 	const modifierFlags = ts.getCombinedModifierFlags(declaration)
 	const flags = symbol.getFlags()
-	const result = createMember<DocProperty>(top.parent.flags & ts.NodeFlags.Const ? "const" : flags & ts.SymbolFlags.BlockScopedVariable ? "let" : flags & ts.SymbolFlags.FunctionScopedVariable ? "var" : flags & ts.SymbolFlags.EnumMember ? "enumMember" : "field", symbol, symbol, declaration, checker)
+	parseCommonMember(result, top.parent.flags & ts.NodeFlags.Const ? "const" : flags & ts.SymbolFlags.BlockScopedVariable ? "let" : flags & ts.SymbolFlags.FunctionScopedVariable ? "var" : flags & ts.SymbolFlags.EnumMember ? "enumMember" : "field", symbol, symbol, declaration, checker)
 	result.optional = !!(flags & ts.SymbolFlags.Optional)
 	result.readOnly = !!(declaration.parent.flags & ts.NodeFlags.Const || modifierFlags & ts.ModifierFlags.Readonly)
-	result.type = parseType(checker.getTypeOfSymbolAtLocation(symbol, declaration), checker)
+	result.type = getType(checker.getTypeOfSymbolAtLocation(symbol, declaration), checker)
 	if (declaration.initializer) {
 		result.default = declaration.initializer
 	}
 	return result
 }
 
-function parseAccessor(symbol: ts.Symbol, checker: ts.TypeChecker) {
+function parseAccessor(result: DocProperty, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	const declaration = (symbol.valueDeclaration || symbol.getDeclarations()[0]) as ts.AccessorDeclaration
-	const result = createMember<DocProperty>("accessor", symbol, symbol, declaration, checker)
+	parseCommonMember<DocProperty>(result, "accessor", symbol, symbol, declaration, checker)
 	result.readOnly = !(symbol.getFlags() & ts.SymbolFlags.SetAccessor)
-	result.type = parseType(checker.getTypeOfSymbolAtLocation(symbol, declaration), checker)
+	result.type = getType(checker.getTypeOfSymbolAtLocation(symbol, declaration), checker)
 	return result
 }
 
-function parseClass(symbol: ts.Symbol, checker: ts.TypeChecker) {
+function parseClass(result: DocClass, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	const declarations = symbol.getDeclarations()
 	const implementation = (declarations.find(declaration => declaration.kind === ts.SyntaxKind.ClassDeclaration) || declarations.find(declaration => declaration.kind === ts.SyntaxKind.InterfaceDeclaration) || declarations[0]) as ts.ClassDeclaration | ts.InterfaceDeclaration
-	const result = createMember<DocClass>(symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol, symbol, implementation, checker)
+	parseCommonMember<DocClass>(result, symbol.flags & ts.SymbolFlags.Class ? "class" : "interface", symbol, symbol, implementation, checker)
 	const type = checker.getDeclaredTypeOfSymbol(symbol) as ts.InterfaceType
 	if (type.typeParameters) {
-		result.typeParameters = type.typeParameters.map((typeParameter, index) => parseTypeParameter(typeParameter, implementation.typeParameters[index], checker))
+		result.typeParameters = type.typeParameters.map((typeParameter, index) => parseTypeParameter({} as DocTypeParameter, typeParameter, implementation.typeParameters[index], checker))
 	}
 	for (const baseType of checker.getBaseTypes(type)) {
 		result.extends = result.extends || []
-		result.extends.push(parseType(baseType, checker))
+		result.extends.push(getType(baseType, checker))
 	}
 	const implementTypes = ts.getClassImplementsHeritageClauseElements(implementation)
 	if (implementTypes) {
 		for (const implementType of implementTypes) {
 			result.implements = result.implements || []
-			result.implements.push(parseType(checker.getTypeAtLocation(implementType.expression), checker))
+			result.implements.push(getType(checker.getTypeAtLocation(implementType.expression), checker))
 		}
 	}
 	const constructor = symbol.members.get("__constructor" as ts.__String)
 	if (constructor) {
-		result.constructor = parseMember(constructor, checker) as DocMethod
+		result.constructor = getMember(constructor, checker) as DocMethod
 	}
 	const index = symbol.members.get("__index" as ts.__String)
 	if (index) {
-		result.index = parseMember(index, checker) as DocMethod
+		result.index = getMember(index, checker) as DocMethod
 		for (const jsDoc of getJSDocComments(index.valueDeclaration || index.getDeclarations()[0])) {
 			result.summary = concatComment(result.summary, jsDoc.comment)
 		}
 	}
 	const newCall = symbol.members.get("__new" as ts.__String)
 	if (newCall) {
-		result.new = parseMember(newCall, checker) as DocMethod
+		result.new = getMember(newCall, checker) as DocMethod
 	}
 	result.members = []
 	if (symbol.exports) {
@@ -244,7 +254,7 @@ function parseClass(symbol: ts.Symbol, checker: ts.TypeChecker) {
 			if (childSymbol.getFlags() & ts.SymbolFlags.Prototype) {
 				return
 			}
-			const childMember = parseMember(childSymbol, checker)
+			const childMember = getMember(childSymbol, checker)
 			result.members.push(childMember)
 		})
 	}
@@ -254,66 +264,64 @@ function parseClass(symbol: ts.Symbol, checker: ts.TypeChecker) {
 			if (childSymbol.getFlags() & (ts.SymbolFlags.Signature | ts.SymbolFlags.Constructor)) {
 				return
 			}
-			const childMember = parseMember(childSymbol, checker)
+			const childMember = getMember(childSymbol, checker)
 			result.prototypeMmbers.push(childMember)
 		})
 	}
 	return result
 }
 
-function parseEnum(symbol: ts.Symbol, checker: ts.TypeChecker) {
+function parseEnum(result: DocEnum, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	const declaration = symbol.getDeclarations().find(declaration => declaration.kind === ts.SyntaxKind.EnumDeclaration)
-	const result = createMember<DocEnum>("enum", symbol, symbol, declaration, checker)
+	parseCommonMember<DocEnum>(result, "enum", symbol, symbol, declaration, checker)
 	result.const = !!(symbol.flags & ts.SymbolFlags.ConstEnum)
 	result.members = []
 	if (symbol.exports) {
 		symbol.exports.forEach((childSymbol, key) => {
-			const childMember = parseMember(childSymbol, checker)
+			const childMember = getMember(childSymbol, checker)
 			result.members.push(childMember)
 		})
 	}
 	return result
 }
 
-function parseNamespace(symbol: ts.Symbol, checker: ts.TypeChecker) {
+function parseNamespace(result: DocNamespace, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	const declaration = symbol.getDeclarations().find(declaration => declaration.kind === ts.SyntaxKind.ModuleDeclaration)
-	const result = createMember<DocNamespace>("namespace", symbol, symbol, declaration, checker)
+	parseCommonMember<DocNamespace>(result, "namespace", symbol, symbol, declaration, checker)
 	result.members = []
 	if (symbol.exports) {
 		symbol.exports.forEach((childSymbol, key) => {
-			const childMember = parseMember(childSymbol, checker)
+			const childMember = getMember(childSymbol, checker)
 			result.members.push(childMember)
 		})
 	}
 	return result
 }
 
-function parseTypeAlias(symbol: ts.Symbol, checker: ts.TypeChecker) {
+function parseTypeAlias(result: DocTypeAlias, symbol: ts.Symbol, checker: ts.TypeChecker) {
 	const declaration = symbol.getDeclarations().find(declaration => declaration.kind === ts.SyntaxKind.TypeAliasDeclaration)
-	const result = createMember<DocTypeAlias>("type", symbol, symbol, declaration, checker)
-	result.type = parseType(checker.getDeclaredTypeOfSymbol(symbol), checker)
+	parseCommonMember<DocTypeAlias>(result, "type", symbol, symbol, declaration, checker)
+	result.type = getType(checker.getDeclaredTypeOfSymbol(symbol), checker)
 	return result
 }
 
-function createMember<T extends DocMember>(memberType: T["memberType"], symbolOrSignature: ts.Symbol | ts.Signature, symbol: ts.Symbol, declaration: ts.Declaration, checker: ts.TypeChecker) {
+function parseCommonMember<T extends DocMember>(result: DocMember, memberType: T["memberType"], symbolOrSignature: ts.Symbol | ts.Signature, symbol: ts.Symbol, declaration: ts.Declaration, checker: ts.TypeChecker) {
 	const sourceFile = declaration.getSourceFile()
 	const loc = sourceFile.getLineAndCharacterOfPosition(declaration.getStart(sourceFile, true))
 	const locEnd = sourceFile.getLineAndCharacterOfPosition(declaration.getEnd())
 	const modifierFlags = ts.getCombinedModifierFlags(declaration)
-	const result = {
-		sourceObject: declaration,
-		memberType,
-		name: symbol.getName(),
-		summary: ts.displayPartsToString(symbolOrSignature.getDocumentationComment(checker)),
-		line: loc.line,
-		column: loc.character,
-		endLine: locEnd.line,
-		endColumn: locEnd.character,
-		internal: false,
-		protected: !!(modifierFlags & ts.ModifierFlags.Protected),
-		private: !!(modifierFlags & ts.ModifierFlags.Private),
-		static: !!(modifierFlags & ts.ModifierFlags.Static)
-	} as T
+	result.sourceObject = declaration
+	result.memberType = memberType
+	result.name = symbol.getName()
+	result.summary = ts.displayPartsToString(symbolOrSignature.getDocumentationComment(checker))
+	result.line = loc.line
+	result.column = loc.character
+	result.endLine = locEnd.line
+	result.endColumn = locEnd.character
+	result.internal = false
+	result.protected = !!(modifierFlags & ts.ModifierFlags.Protected)
+	result.private = !!(modifierFlags & ts.ModifierFlags.Private)
+	result.static = !!(modifierFlags & ts.ModifierFlags.Static)
 	for (const tag of symbolOrSignature.getJsDocTags()) {
 		switch (tag.name) {
 			case "example":
@@ -408,136 +416,69 @@ function createMember<T extends DocMember>(memberType: T["memberType"], symbolOr
 	return result
 }
 
-function parseType(type: ts.Type, checker: ts.TypeChecker) {
-	if (type._docType) {
-		return type._docType
-	}
+function getType(type: ts.Type, checker: ts.TypeChecker) {
+	return getDocNode(type, checker, parseType)
+}
+
+function parseType(result: DocType, type: ts.Type, checker: ts.TypeChecker) {
+	result.sourceObject = type
 	if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.String | ts.TypeFlags.Number | ts.TypeFlags.Boolean | ts.TypeFlags.BigInt | ts.TypeFlags.ESSymbol | ts.TypeFlags.Void | ts.TypeFlags.Undefined | ts.TypeFlags.Null | ts.TypeFlags.Never | ts.TypeFlags.NonPrimitive)) {
-		return type._docType = {
-			sourceObject: type,
-			type: "native",
-			value: (type as ts.IntrinsicType).intrinsicName
-		} as DocNativeType
+		return parseIntrinsicType(result as DocNativeType, type as ts.IntrinsicType, checker)
 	}
 	if (type.flags & ts.TypeFlags.Object) {
 		const objectFlags = (type as ts.ObjectType).objectFlags
 		if (objectFlags & ts.ObjectFlags.ClassOrInterface) {
-			return type._docType = {
-				sourceObject: type,
-				type: "class"
-			} as DocClassType
+			return parseClassType(result as DocClassType, type as ts.InterfaceType, checker)
 		}
 		if (objectFlags & ts.ObjectFlags.Reference) {
 			if (checker.isArrayType(type)) {
-				const docType = type._docType = {
-					sourceObject: type,
-					type: "array",
-				} as DocArrayType
-				docType.operand = parseType(checker.getElementTypeOfArrayType(type), checker)
-				return docType
+				return parseArrayType(result as DocArrayType, type as ts.TypeReference, checker)
 			}
-			return type._docType = {
-				sourceObject: type,
-				type: "generic",
-				target: parseType((type as ts.TypeReference).target, checker),
-				typeArguments: (type as ts.TypeReference).typeArguments.map(type => parseType(type, checker))
-			} as DocGenericType
+			if ((type as ts.TypeReference).target.objectFlags & ts.ObjectFlags.Tuple) {
+				return parseTupleType(result as DocTupleType, type as ts.TupleType, checker)
+			}
+			return parseGenericType(result as DocGenericType, type as ts.TypeReference, checker)
 		}
 		if (objectFlags & (ts.ObjectFlags.Anonymous | ts.ObjectFlags.Mapped)) {
 			const signature = checker.getSignaturesOfType(type, ts.SignatureKind.Call)
 			if (signature.length === 1) {
-				const method = parseMethodSignature(signature[0], type.symbol, checker)
-				return type._docType = {
-					sourceObject: type,
-					type: "function",
-					typeParameters: method.typeParameters,
-					parameters: method.parameters,
-					returnType: method.returnType
-				} as DocFunctionType
+				return parseFunctionType(result as DocFunctionType, type as ts.ObjectType, signature[0], checker)
 			}
-			return type._docType = {
-				sourceObject: type,
-				type: "object",
-				members: checker.getPropertiesOfType(type).map(member => parseMember(member, checker))
-			} as DocObjectType
+			if (type.symbol) {
+				return parseTypeOf(result as DocTypeOfType, type.symbol as ts.Symbol, checker)
+			}
+			return parseObjectType(result as DocObjectType, type as ts.ObjectType, checker)
 		}
-		debugger
 	}
-	if (type.flags & (ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral | ts.TypeFlags.BigIntLiteral)) {
-		return type._docType = {
-			sourceObject: type,
-			type: "literal",
-			value: (type as ts.StringLiteralType | ts.NumberLiteralType | ts.BigIntLiteralType).value
-		} as DocLiteralType
+	if (type.flags & (ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral)) {
+		return parseLiteralType(result as DocLiteralType, type as ts.StringLiteralType | ts.NumberLiteralType, checker)
 	}
 	if (type.flags & ts.TypeFlags.BooleanLiteral) {
-		return type._docType = {
-			sourceObject: type,
-			type: "literal",
-			value: (type as ts.IntrinsicType).intrinsicName === "true"
-		} as DocLiteralType
+		return parseBooleanLiteralType(result as DocLiteralType, type as ts.IntrinsicType, checker)
 	}
 	if (type.flags & (ts.TypeFlags.UnionOrIntersection)) {
-		return type._docType = {
-			sourceObject: type,
-			type: "expression",
-			operator: type.flags & ts.TypeFlags.Union ? "|" : "&",
-			operands: (type as ts.UnionType).types.map(type => parseType(type, checker))
-		} as DocExpressionType
+		return parseBinaryType(result as DocBinaryType, type as ts.UnionOrIntersectionType, checker)
 	}
 	if (type.flags & ts.TypeFlags.BigIntLiteral) {
-		const value = BigInt((type as ts.BigIntLiteralType).value.base10Value)
-		return type._docType = {
-			sourceObject: type,
-			type: "literal",
-			value: (type as ts.BigIntLiteralType).value.negative ? -value : value
-		} as DocLiteralType
+		return parseBigIntLiteralType(result as DocLiteralType, type as ts.BigIntLiteralType, checker)
 	}
 	if (type.flags & ts.TypeFlags.Conditional) {
-		return type._docType = {
-			sourceObject: type,
-			type: "conditional",
-			checkType: parseType((type as ts.ConditionalType).root.checkType, checker),
-			extendsType: parseType((type as ts.ConditionalType).root.extendsType, checker),
-			trueType: parseType((type as ts.ConditionalType).root.trueType, checker),
-			falseType: parseType((type as ts.ConditionalType).root.falseType, checker)
-		} as DocConditionalType
+		return parseConditionalType(result as DocConditionalType, type as ts.ConditionalType, checker)
 	}
 	if (type.flags & ts.TypeFlags.IndexedAccess) {
-		return type._docType = {
-			sourceObject: type,
-			type: "indexedAccess",
-			operand: parseType((type as ts.IndexedAccessType).objectType, checker),
-			argument: parseType((type as ts.IndexedAccessType).indexType, checker)
-		} as DocIndexedAccessType
+		return parseIndexedAccessType(result as DocIndexedAccessType, type as ts.IndexedAccessType, checker)
 	}
 	if (type.flags & ts.TypeFlags.Index) {
-		return type._docType = {
-			sourceObject: type,
-			type: "unary",
-			operator: "keyof",
-			operand: parseType((type as ts.IndexType).type, checker)
-		} as DocUnaryType
+		return parseUnaryType(result as DocUnaryType, type as ts.IndexType, checker)
 	}
 	if (type.flags & ts.TypeFlags.TypeParameter) {
 		if ((type as any).thisType) {
-			return type._docType = {
-				sourceObject: type,
-				type: "this"
-			} as DocThisType
+			return parseThisType(result as DocThisType, type, checker)
 		}
-		return type._docType = {
-			sourceObject: type,
-			type: "typeParameter",
-			name: (type as ts.TypeParameter).symbol.getName()
-		} as DocTypeParameterType
+		return parseTypeParameterType(result as DocTypeParameterType, type, checker)
 	}
 	if (type.flags & ts.TypeFlags.UniqueESSymbol) {
-		return type._docType = {
-			sourceObject: type,
-			type: "native",
-			value: "unique symbol"
-		} as DocNativeType
+		return parseNativeType(result as DocNativeType, "unique symbol", checker)
 	}
 	if (type.flags & ts.TypeFlags.EnumLiteral && !(type.flags & ts.TypeFlags.Union)) {
 		// if (type.flags & 1024 /* EnumLiteral */ && !(type.flags & 1048576 /* Union */)) {
@@ -551,22 +492,138 @@ function parseType(type: ts.Type, checker: ts.TypeChecker) {
 		// 	return type._docType = {
 		// 		sourceObject: type,
 		// 		type: "enum",
-		// 		operand: parseType((type as ts.IndexedAccessType).objectType, checker),
-		// 		argument: parseType((type as ts.IndexedAccessType).indexType, checker)
+		// 		operand: getType((type as ts.IndexedAccessType).objectType, checker),
+		// 		argument: getType((type as ts.IndexedAccessType).indexType, checker)
 		// 	} as DocIndexedAccessType
 	}
 	if (type.flags & ts.TypeFlags.Enum) {
 		// return symbolToTypeNode(type.symbol, context, 67897832 /* Type */);
 	}
 	if (type.flags & ts.TypeFlags.Substitution) {
-		return parseType((type as ts.SubstitutionType).typeVariable, checker)
+		return parseSubstitutionType(result as DocNativeType, type as ts.SubstitutionType, checker)
 	}
-	console.log(checker.typeToString(type), ': ', type)
-	return type._docType = {
-		sourceObject: type,
-		type: "native",
-		value: "*"
-	} as DocNativeType
+	return parseNativeType(result as DocNativeType, "mixed", checker)
+}
+
+function parseIntrinsicType(result: DocNativeType, type: ts.IntrinsicType, checker: ts.TypeChecker) {
+	result.type = "native"
+	result.value = type.intrinsicName as any
+	return result
+}
+
+function parseLiteralType(result: DocLiteralType, type: ts.StringLiteralType | ts.NumberLiteralType, checker: ts.TypeChecker) {
+	result.type = "literal"
+	result.value = type.value
+	return result
+}
+
+function parseBigIntLiteralType(result: DocLiteralType, type: ts.BigIntLiteralType, checker: ts.TypeChecker) {
+	const value = BigInt(type.value.base10Value)
+	result.type = "literal"
+	result.value = type.value.negative ? -value : value
+	return result
+}
+
+function parseBooleanLiteralType(result: DocLiteralType, type: ts.IntrinsicType, checker: ts.TypeChecker) {
+	result.type = "literal"
+	result.value = type.intrinsicName === "true"
+	return result
+}
+
+function parseNativeType(result: DocNativeType, type: string, checker: ts.TypeChecker) {
+	result.type = "native"
+	result.value = type as any
+	return result
+}
+
+function parseUnaryType(result: DocUnaryType, type: ts.IndexType, checker: ts.TypeChecker) {
+	result.type = "unary"
+	result.operator = "keyof"
+	result.operand = getType((type as ts.IndexType).type, checker)
+	return result
+}
+
+function parseBinaryType(result: DocBinaryType, type: ts.UnionOrIntersectionType, checker: ts.TypeChecker) {
+	result.type = "binary"
+	result.operator = type.flags & ts.TypeFlags.Union ? "|" : "&"
+	result.operands = type.types.map(type => getType(type, checker))
+	return result
+}
+
+function parseConditionalType(result: DocConditionalType, type: ts.ConditionalType, checker: ts.TypeChecker) {
+	result.type = "conditional"
+	result.checkType = getType((type as ts.ConditionalType).root.checkType, checker)
+	result.extendsType = getType((type as ts.ConditionalType).root.extendsType, checker)
+	result.trueType = getType((type as ts.ConditionalType).root.trueType, checker)
+	result.falseType = getType((type as ts.ConditionalType).root.falseType, checker)
+	return result
+}
+
+function parseClassType(result: DocClassType, type: ts.InterfaceType, checker: ts.TypeChecker) {
+	result.type = "class"
+	return result
+}
+
+function parseArrayType(result: DocArrayType, type: ts.TypeReference, checker: ts.TypeChecker) {
+	result.type = "array"
+	result.operand = getType(checker.getElementTypeOfArrayType(type), checker)
+	return result
+}
+
+function parseTupleType(result: DocTupleType, type: ts.TypeReference, checker: ts.TypeChecker) {
+	result.type = "tuple"
+	result.elements = type.typeArguments.map(argument => getType(argument, checker))
+	return result
+}
+
+function parseGenericType(result: DocGenericType, type: ts.TypeReference, checker: ts.TypeChecker) {
+	result.type = "generic"
+	result.target = getType(type.target, checker)
+	result.typeArguments = type.typeArguments.map(type => getType(type, checker))
+	return result
+}
+
+function parseFunctionType(result: DocFunctionType, type: ts.ObjectType, signature: ts.Signature, checker: ts.TypeChecker) {
+	result.type = "function"
+	const method = parseMethodSignature({} as DocMethod, signature, type.symbol, checker)
+	result.typeParameters = method.typeParameters
+	result.parameters = method.parameters
+	result.returnType = method.returnType
+	return result
+}
+
+function parseTypeOf(result: DocTypeOfType, symbol: ts.Symbol, checker: ts.TypeChecker) {
+	result.type = "typeof"
+	result.member = symbol
+	return result
+}
+
+function parseObjectType(result: DocObjectType, type: ts.ObjectType, checker: ts.TypeChecker) {
+	result.type = "object"
+	result.members = checker.getPropertiesOfType(type).map(member => getMember(member, checker))
+	return result
+}
+
+function parseIndexedAccessType(result: DocIndexedAccessType, type: ts.IndexedAccessType, checker: ts.TypeChecker) {
+	result.type = "indexedAccess"
+	result.operand = getType((type as ts.IndexedAccessType).objectType, checker)
+	result.argument = getType((type as ts.IndexedAccessType).indexType, checker)
+	return result
+}
+
+function parseThisType(result: DocThisType, type: ts.Type, checker: ts.TypeChecker) {
+	result.type = "this"
+	return result
+}
+
+function parseSubstitutionType(result: DocNativeType, type: ts.SubstitutionType, checker: ts.TypeChecker) {
+	return getType((type as ts.SubstitutionType).typeVariable, checker)
+}
+
+function parseTypeParameterType(result: DocTypeParameterType, type: ts.TypeParameter, checker: ts.TypeChecker) {
+	result.type = "typeParameter"
+	result.name = type.symbol ? type.symbol.getName() : "?"
+	return result
 }
 
 function getJSDocComments(node: ts.Node) {
@@ -690,6 +747,20 @@ export interface DocMember extends DocNode {
 	version?: string
 }
 
+/** 表示一个变量、字段或访问器 */
+export interface DocProperty extends DocMember {
+	/** 成员类型 */
+	memberType: "var" | "let" | "const" | "field" | "accessor" | "enumMember"
+	/** 字段可空 */
+	optional: boolean
+	/** 字段是只读的 */
+	readOnly: boolean
+	/** 字段类型 */
+	type: DocType
+	/** 默认值表达式 */
+	default?: ts.Expression
+}
+
 /** 表示一个函数、方法、构造函数或索引器 */
 export interface DocMethod extends DocMember {
 	/** 成员类型 */
@@ -716,6 +787,8 @@ export interface DocMethod extends DocMember {
 export interface DocTypeParameter extends DocNode {
 	/** 产生当前节点的源 */
 	sourceObject: ts.TypeParameterDeclaration
+	/** 参数类型 */
+	type: DocType
 	/** 默认类型 */
 	default?: DocType
 	/** 约束类型 */
@@ -733,20 +806,6 @@ export interface DocParameter extends DocNode {
 	/** 参数类型 */
 	type: DocType
 	/** 默认值 */
-	default?: ts.Expression
-}
-
-/** 表示一个变量、字段或访问器 */
-export interface DocProperty extends DocMember {
-	/** 成员类型 */
-	memberType: "var" | "let" | "const" | "field" | "accessor" | "enumMember"
-	/** 字段可空 */
-	optional: boolean
-	/** 字段是只读的 */
-	readOnly: boolean
-	/** 字段类型 */
-	type: DocType
-	/** 默认值表达式 */
 	default?: ts.Expression
 }
 
@@ -803,7 +862,7 @@ export interface DocType {
 	/** 产生当前节点的源 */
 	sourceObject: any
 	/** 类型的类型 */
-	type: DocNativeType["type"] | DocLiteralType["type"] | DocThisType["type"] | DocTypeParameterType["type"] | DocClassType["type"] | DocExpressionType["type"] | DocGenericType["type"] | DocUnaryType["type"] | DocFunctionType["type"] | DocArrayType["type"] | DocObjectType["type"] | DocIndexedAccessType["type"] | DocConditionalType["type"]
+	type: DocNativeType["type"] | DocLiteralType["type"] | DocThisType["type"] | DocTypeParameterType["type"] | DocClassType["type"] | DocBinaryType["type"] | DocGenericType["type"] | DocUnaryType["type"] | DocFunctionType["type"] | DocArrayType["type"] | DocTupleType["type"] | DocObjectType["type"] | DocIndexedAccessType["type"] | DocConditionalType["type"] | DocTypeOfType["type"]
 }
 
 /** 表示一个内置类型 */
@@ -811,7 +870,7 @@ export interface DocNativeType extends DocType {
 	/** 类型的类型 */
 	type: "native"
 	/** 内置类型的内容 */
-	value: "any" | "unknown" | "string" | "number" | "boolean" | "bigint" | "symbol" | "unique symbol" | "void" | "undefined" | "null" | "never" | "object" | "*"
+	value: "any" | "unknown" | "string" | "number" | "boolean" | "bigint" | "symbol" | "unique symbol" | "void" | "undefined" | "null" | "never" | "object" | "mixed"
 }
 
 /** 表示一个字面量类型 */
@@ -846,16 +905,6 @@ export interface DocClassType extends DocType {
 	// value: DocClass
 }
 
-/** 表示一个运算类型 */
-export interface DocExpressionType extends DocType {
-	/** 类型的类型 */
-	type: "expression"
-	/** 操作符 */
-	operator: "&" | "|"
-	/** 操作数 */
-	operands: DocType[]
-}
-
 /** 表示一个泛型 */
 export interface DocGenericType extends DocType {
 	/** 类型的类型 */
@@ -866,24 +915,20 @@ export interface DocGenericType extends DocType {
 	typeArguments: DocType[]
 }
 
-/** 表示一个子属性访问类型 */
-export interface DocIndexedAccessType extends DocType {
+/** 表示一个数组类型 */
+export interface DocArrayType extends DocType {
 	/** 类型的类型 */
-	type: "indexedAccess"
-	/** 左值 */
-	operand: DocType
-	/** 右值 */
-	argument: DocType
-}
-
-/** 表示一个单目类型 */
-export interface DocUnaryType extends DocType {
-	/** 类型的类型 */
-	type: "unary"
-	/** 操作符 */
-	operator: "keyof"
+	type: "array"
 	/** 操作数 */
 	operand: DocType
+}
+
+/** 表示一个数组类型 */
+export interface DocTupleType extends DocType {
+	/** 类型的类型 */
+	type: "tuple"
+	/** 操作数 */
+	elements: DocType[]
 }
 
 /** 表示一个函数类型 */
@@ -898,12 +943,12 @@ export interface DocFunctionType extends DocType {
 	returnType: DocType
 }
 
-/** 表示一个数组类型 */
-export interface DocArrayType extends DocType {
+/** 表示一个类型查询类型 */
+export interface DocTypeOfType extends DocType {
 	/** 类型的类型 */
-	type: "array"
-	/** 操作数 */
-	operand: DocType
+	type: "typeof"
+	/** 查询符号 */
+	member: ts.Symbol
 }
 
 /** 表示一个对象类型 */
@@ -914,17 +959,47 @@ export interface DocObjectType extends DocType {
 	members: DocMember[]
 }
 
+/** 表示一个单目类型 */
+export interface DocUnaryType extends DocType {
+	/** 类型的类型 */
+	type: "unary"
+	/** 操作符 */
+	operator: "keyof"
+	/** 操作数 */
+	operand: DocType
+}
+
+/** 表示一个双目类型 */
+export interface DocBinaryType extends DocType {
+	/** 类型的类型 */
+	type: "binary"
+	/** 操作符 */
+	operator: "&" | "|"
+	/** 操作数 */
+	operands: DocType[]
+}
+
+/** 表示一个子属性访问类型 */
+export interface DocIndexedAccessType extends DocType {
+	/** 类型的类型 */
+	type: "indexedAccess"
+	/** 左值 */
+	operand: DocType
+	/** 右值 */
+	argument: DocType
+}
+
 /** 表示一个条件类型 */
 export interface DocConditionalType extends DocType {
 	/** 类型的类型 */
 	type: "conditional"
 	/** 检查类型 */
 	checkType: DocType
-	/** 继承类型 */
+	/** 测试的继承类型 */
 	extendsType: DocType
-	/** true 类型 */
+	/** 测试结果为 `true` 的类型 */
 	trueType: DocType
-	/** false 类型 */
+	/** 测试结果为 `false` 的类型 */
 	falseType: DocType
 }
 
@@ -1184,7 +1259,6 @@ declare module "typescript" {
 		resolvedModules?: Map<ResolvedModuleFull & { originalPath?: string }>
 		locals?: Map<Symbol>
 	}
-
 	interface Type {
 		_docType?: DocType
 	}
@@ -1192,7 +1266,7 @@ declare module "typescript" {
 		intrinsicName: string
 	}
 	interface TypeChecker {
-		isArrayType(type: Type): type is TypeReference
+		isArrayType(type: Type): boolean
 		getElementTypeOfArrayType(type: TypeReference): Type
 	}
 }
