@@ -561,6 +561,7 @@ function parseConditionalType(result: DocConditionalType, type: ts.ConditionalTy
 
 function parseClassType(result: DocClassType, type: ts.InterfaceType, checker: ts.TypeChecker) {
 	result.type = "class"
+	result.reference = getDocNode(type.getSymbol(), checker, parseClass)
 	return result
 }
 
@@ -902,7 +903,7 @@ export interface DocClassType extends DocType {
 	/** 类型的类型 */
 	type: "class"
 	/** 类型的值 */
-	// value: DocClass
+	reference: DocClass
 }
 
 /** 表示一个泛型 */
